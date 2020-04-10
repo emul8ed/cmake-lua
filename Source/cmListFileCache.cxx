@@ -7,6 +7,8 @@
 #include <sstream>
 #include <utility>
 
+#include <lua5.1/lua.hpp>
+
 #include "cmListFileLexer.h"
 #include "cmMessageType.h"
 #include "cmMessenger.h"
@@ -165,6 +167,23 @@ bool cmListFileParser::Parse()
   return true;
 }
 
+int luaAddFunction(lua_State* L)
+{
+    cmListFile* listFile = static_cast<cmListFile*>(lua_touserdata(L, 1));
+
+    cmListFileFunction function {};
+    function.Name = lua_tostring(L, 2);
+    function.Line = 0; // @@@@@ line
+
+    for (int i = 3; i <= lua_gettop(L); ++i)
+    {
+        function.Arguments.emplace_back(lua_tostring(L, i),
+            cmListFileArgument::Quoted, 0); // @@@@@ line
+    }
+
+    listFile->Functions.push_back(std::move(function));
+}
+
 bool cmListFile::ParseFile(const char* filename, cmMessenger* messenger,
                            cmListFileBacktrace const& lfbt)
 {
@@ -175,10 +194,22 @@ bool cmListFile::ParseFile(const char* filename, cmMessenger* messenger,
 
   bool parseError = false;
 
+  lua_State* L = lua_open();
+  luaL_openlibs(L);
+
+  lua_register(L, "addCMakeFunction", luaAddFunction);
+  lua_pushlightuserdata(L, this);
+  lua_setglobal(L, "cmListFile");
+
+  parseError = (luaL_dofile(L, filename) != 0);
+  /*
   {
     cmListFileParser parser(this, lfbt, messenger);
     parseError = !parser.ParseFile(filename);
   }
+  */
+
+  lua_close(L);
 
   return !parseError;
 }

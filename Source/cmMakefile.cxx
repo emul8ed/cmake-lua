@@ -4075,6 +4075,11 @@ int cmMakefile::ConfigureFile(const std::string& infile,
   return res;
 }
 
+int cmMakefile::ExecLuaScript(const std::string& scriptfile)
+{
+  return 1;
+}
+
 void cmMakefile::SetProperty(const std::string& prop, const char* value)
 {
   this->StateSnapshot.GetDirectory().SetProperty(prop, value, this->Backtrace);
