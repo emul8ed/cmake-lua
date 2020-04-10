@@ -26,6 +26,7 @@
 #include "cmEnableLanguageCommand.h"
 #include "cmEnableTestingCommand.h"
 #include "cmExecProgramCommand.h"
+#include "cmExecuteLuaScriptCommand.h"
 #include "cmExecuteProcessCommand.h"
 #include "cmFileCommand.h"
 #include "cmFindFileCommand.h"
@@ -160,6 +161,7 @@ void GetScriptingCommands(cmState* state)
   state->AddBuiltinCommand("string", cmStringCommand);
   state->AddBuiltinCommand("unset", cmUnsetCommand);
   state->AddBuiltinCommand("while", cmWhileCommand);
+  state->AddBuiltinCommand("lua", cmExecLuaScriptCommand);
 
   state->AddUnexpectedCommand(
     "else",
