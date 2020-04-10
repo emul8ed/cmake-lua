@@ -13,8 +13,6 @@
 #include <sstream>
 #include <utility>
 
-#include <lua5.1/lua.hpp>
-
 #include <cm/iterator>
 #include <cm/memory>
 #include <cm/optional>
@@ -4076,46 +4074,6 @@ int cmMakefile::ConfigureFile(const std::string& infile,
   }
   return res;
 }
-
-/*
-int luaExecuteCommand(lua_State* L)
-{
-    cmMakefile* makeFile = static_cast<cmMakefile*>(lua_touserdata(L, 1));
-
-    cmListFileFunction function {};
-    function.Name = lua_tostring(L, 2);
-    function.Line = 0; // @@@@@ line
-
-    for (int i = 3; i <= lua_gettop(L); ++i)
-    {
-        function.Arguments.emplace_back(lua_tostring(L, i),
-            cmListFileArgument::Quoted, 0); // @@@@@ line
-    }
-
-    cmExecutionStatus status(*makeFile);
-    makeFile->ExecuteCommand(function, status);
-
-    return 0;
-}
-
-int cmMakefile::ExecLuaScript(const std::string& scriptfile)
-{
-  this->AddCMakeDependFile(scriptfile);
-
-  lua_State* L = lua_open();
-  luaL_openlibs(L);
-
-  lua_register(L, "executeCommand", luaExecuteCommand);
-  lua_pushlightuserdata(L, this);
-  lua_setglobal(L, "cmMakefile");
-
-  int result = (luaL_dofile(L, scriptfile.c_str()) == 0);
-
-  lua_close(L);
-
-  return result;
-}
-*/
 
 void cmMakefile::SetProperty(const std::string& prop, const char* value)
 {

@@ -683,11 +683,6 @@ public:
                     cmNewLineStyle = cmNewLineStyle());
 
   /**
-   * TODO
-   */
-  int ExecLuaScript(const std::string& scriptfile);
-
-  /**
    * Print a command's invocation
    */
   void PrintCommandTrace(const cmListFileFunction& lff) const;
