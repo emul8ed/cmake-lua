@@ -30,6 +30,23 @@ bool cmExecLuaScriptCommand(std::vector<std::string> const& args,
     return false;
   }
 
+  cmMakefile& makefile = status.GetMakefile();
+
+  makefile->AddCMakeDependFile(scriptfile);
+
+  lua_State* L = lua_open();
+  luaL_openlibs(L);
+
+  lua_register(L, "executeCommand", luaExecuteCommand);
+  lua_pushlightuserdata(L, this);
+  lua_setglobal(L, "cmMakefile");
+
+  bool result = (luaL_dofile(L, scriptfile.c_str()) == 0);
+
+  lua_close(L);
+
+  return result;
+
   if (!status.GetMakefile().ExecLuaScript(inputFile)) {
     status.SetError("Problem executing lua script");
     return false;
