@@ -2,12 +2,54 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmExecuteLuaScriptCommand.h"
 
+#include <lua5.1/lua.hpp>
+
 #include "cmExecutionStatus.h"
 #include "cmMakefile.h"
 #include "cmMessageType.h"
 #include "cmNewLineStyle.h"
 #include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
+
+int luaExecuteCommand(lua_State* L)
+{
+    cmMakefile* makeFile = static_cast<cmMakefile*>(lua_touserdata(L, 1));
+
+    cmListFileFunction function {};
+    function.Name = lua_tostring(L, 2);
+    function.Line = 0; // @@@@@ line
+
+    for (int i = 3; i <= lua_gettop(L); ++i)
+    {
+        function.Arguments.emplace_back(lua_tostring(L, i),
+            cmListFileArgument::Quoted, 0); // @@@@@ line
+    }
+
+    cmExecutionStatus status(*makeFile);
+    makeFile->ExecuteCommand(function, status);
+
+    return 0;
+}
+
+int luaGetDefinition(lua_State* L)
+{
+    cmMakefile* makeFile = static_cast<cmMakefile*>(lua_touserdata(L, 1));
+
+    std::string name = lua_tostring(L, 2);
+
+    const char* def = makeFile->GetDefinition(name);
+
+    if (def)
+    {
+        lua_pushstring(L, def);
+    }
+    else
+    {
+        lua_pushnil(L);
+    }
+
+    return 1;
+}
 
 // cmExecLuaScriptCommand
 bool cmExecLuaScriptCommand(std::vector<std::string> const& args,
@@ -32,25 +74,23 @@ bool cmExecLuaScriptCommand(std::vector<std::string> const& args,
 
   cmMakefile& makefile = status.GetMakefile();
 
-  makefile->AddCMakeDependFile(scriptfile);
+  makefile.AddCMakeDependFile(inputFile);
 
   lua_State* L = lua_open();
   luaL_openlibs(L);
 
   lua_register(L, "executeCommand", luaExecuteCommand);
-  lua_pushlightuserdata(L, this);
+  lua_register(L, "getDefinition", luaGetDefinition);
+  lua_pushlightuserdata(L, &makefile);
   lua_setglobal(L, "cmMakefile");
 
-  bool result = (luaL_dofile(L, scriptfile.c_str()) == 0);
+  bool result = (luaL_dofile(L, inputFile.c_str()) == 0);
+
+  if (!result) {
+    status.SetError("Problem executing lua script");
+  }
 
   lua_close(L);
 
   return result;
-
-  if (!status.GetMakefile().ExecLuaScript(inputFile)) {
-    status.SetError("Problem executing lua script");
-    return false;
-  }
-
-  return true;
 }

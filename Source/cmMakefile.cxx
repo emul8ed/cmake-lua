@@ -4077,6 +4077,7 @@ int cmMakefile::ConfigureFile(const std::string& infile,
   return res;
 }
 
+/*
 int luaExecuteCommand(lua_State* L)
 {
     cmMakefile* makeFile = static_cast<cmMakefile*>(lua_touserdata(L, 1));
@@ -4114,6 +4115,7 @@ int cmMakefile::ExecLuaScript(const std::string& scriptfile)
 
   return result;
 }
+*/
 
 void cmMakefile::SetProperty(const std::string& prop, const char* value)
 {
