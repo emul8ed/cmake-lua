@@ -111,7 +111,7 @@ bool cmExecLuaScriptCommand(std::vector<std::string> const& args,
   bool result = (luaL_dofile(L, inputFile.c_str()) == 0);
 
   if (!result) {
-    status.SetError("Problem executing lua script");
+    status.SetError(lua_tostring(L, 1));
   }
 
   return result;
