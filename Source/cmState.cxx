@@ -10,6 +10,8 @@
 
 #include <cm/memory>
 
+#include <lua5.1/lua.hpp>
+
 #include "cmsys/RegularExpression.hxx"
 
 #include "cmCacheManager.h"
@@ -34,7 +36,13 @@ cmState::cmState()
   this->GlobVerificationManager = cm::make_unique<cmGlobVerificationManager>();
 }
 
-cmState::~cmState() = default;
+cmState::~cmState()
+{
+  if (LuaState)
+  {
+    lua_close(LuaState);
+  }
+}
 
 const std::string& cmState::GetTargetTypeName(
   cmStateEnums::TargetType targetType)
@@ -284,8 +292,16 @@ void cmState::RemoveCacheEntryProperty(std::string const& key,
   this->CacheManager->GetCacheIterator(key).SetProperty(propertyName, nullptr);
 }
 
+lua_State* InitLuaState();
+
 cmStateSnapshot cmState::Reset()
 {
+  if (LuaState)
+  {
+    lua_close(LuaState);
+  }
+  LuaState = InitLuaState();
+
   this->GlobalProperties.Clear();
   this->PropertyDefinitions.clear();
   this->GlobVerificationManager->Reset();

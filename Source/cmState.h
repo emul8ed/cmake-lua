@@ -22,6 +22,8 @@
 #include "cmStatePrivate.h"
 #include "cmStateTypes.h"
 
+struct lua_State;
+
 class cmCacheManager;
 class cmCommand;
 class cmGlobVerificationManager;
@@ -42,6 +44,11 @@ public:
 
   cmState(const cmState&) = delete;
   cmState& operator=(const cmState&) = delete;
+
+  lua_State* GetLuaState()
+  {
+    return LuaState;
+  }
 
   enum Mode
   {
@@ -225,6 +232,7 @@ private:
                          const std::string& variable,
                          cmListFileBacktrace const& bt);
 
+  lua_State* LuaState = nullptr;
   std::map<cmProperty::ScopeType, cmPropertyDefinitionMap> PropertyDefinitions;
   std::vector<std::string> EnabledLanguages;
   std::map<std::string, Command> BuiltinCommands;
