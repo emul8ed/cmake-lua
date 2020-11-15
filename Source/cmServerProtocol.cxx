@@ -10,16 +10,17 @@
 #include <vector>
 
 #include <cm/memory>
+#include <cmext/algorithm>
 
-#include "cm_uv.h"
+#include <cm3p/uv.h>
 
-#include "cmAlgorithms.h"
 #include "cmExternalMakefileProjectGenerator.h"
 #include "cmFileMonitor.h"
 #include "cmGlobalGenerator.h"
 #include "cmJsonObjectDictionary.h"
 #include "cmJsonObjects.h"
 #include "cmMessageType.h"
+#include "cmProperty.h"
 #include "cmServer.h"
 #include "cmServerDictionary.h"
 #include "cmState.h"
@@ -433,7 +434,7 @@ cmServerResponse cmServerProtocol1::ProcessCache(
     keys = allKeys;
   } else {
     for (auto const& i : keys) {
-      if (!cmContains(allKeys, i)) {
+      if (!cm::contains(allKeys, i)) {
         return request.ReportError("Key \"" + i + "\" not found in cache.");
       }
     }
@@ -444,7 +445,7 @@ cmServerResponse cmServerProtocol1::ProcessCache(
     entry[kKEY_KEY] = key;
     entry[kTYPE_KEY] =
       cmState::CacheEntryTypeToString(state->GetCacheEntryType(key));
-    entry[kVALUE_KEY] = state->GetCacheEntryValue(key);
+    entry[kVALUE_KEY] = *state->GetCacheEntryValue(key);
 
     Json::Value props = Json::objectValue;
     bool haveProperties = false;
@@ -562,7 +563,7 @@ cmServerResponse cmServerProtocol1::ProcessConfigure(
 
   if (cm->LoadCache(buildDir)) {
     // build directory has been set up before
-    const std::string* cachedSourceDir =
+    cmProp cachedSourceDir =
       cm->GetState()->GetInitializedCacheValue("CMAKE_HOME_DIRECTORY");
     if (!cachedSourceDir) {
       return request.ReportError("No CMAKE_HOME_DIRECTORY found in cache.");
@@ -572,7 +573,7 @@ cmServerResponse cmServerProtocol1::ProcessConfigure(
       cm->SetHomeDirectory(sourceDir);
     }
 
-    const std::string* cachedGenerator =
+    cmProp cachedGenerator =
       cm->GetState()->GetInitializedCacheValue("CMAKE_GENERATOR");
     if (cachedGenerator) {
       if (gg && gg->GetName() != *cachedGenerator) {

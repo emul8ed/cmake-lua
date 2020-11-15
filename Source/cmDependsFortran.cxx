@@ -12,7 +12,7 @@
 
 #include "cmFortranParser.h" /* Interface to parser object.  */
 #include "cmGeneratedFileStream.h"
-#include "cmLocalGenerator.h"
+#include "cmLocalUnixMakefileGenerator3.h"
 #include "cmMakefile.h"
 #include "cmOutputConverter.h"
 #include "cmStateDirectory.h"
@@ -29,12 +29,10 @@ static void cmFortranModuleAppendUpperLower(std::string const& mod,
                                             std::string& mod_lower)
 {
   std::string::size_type ext_len = 0;
-  if (cmHasLiteralSuffix(mod, ".mod")) {
+  if (cmHasLiteralSuffix(mod, ".mod") || cmHasLiteralSuffix(mod, ".sub")) {
     ext_len = 4;
   } else if (cmHasLiteralSuffix(mod, ".smod")) {
     ext_len = 5;
-  } else if (cmHasLiteralSuffix(mod, ".sub")) {
-    ext_len = 4;
   }
   std::string const& name = mod.substr(0, mod.size() - ext_len);
   std::string const& ext = mod.substr(mod.size() - ext_len);
@@ -72,7 +70,7 @@ public:
 
 cmDependsFortran::cmDependsFortran() = default;
 
-cmDependsFortran::cmDependsFortran(cmLocalGenerator* lg)
+cmDependsFortran::cmDependsFortran(cmLocalUnixMakefileGenerator3* lg)
   : cmDepends(lg)
   , Internal(new cmDependsFortranInternals)
 {
@@ -82,10 +80,7 @@ cmDependsFortran::cmDependsFortran(cmLocalGenerator* lg)
   // Get the list of definitions.
   std::vector<std::string> definitions;
   cmMakefile* mf = this->LocalGenerator->GetMakefile();
-  if (const char* c_defines =
-        mf->GetDefinition("CMAKE_TARGET_DEFINITIONS_Fortran")) {
-    cmExpandList(c_defines, definitions);
-  }
+  mf->GetDefExpandList("CMAKE_TARGET_DEFINITIONS_Fortran", definitions);
 
   // translate i.e. FOO=BAR to FOO and add it to the list of defined
   // preprocessor symbols
@@ -245,10 +240,7 @@ void cmDependsFortran::LocateModules()
   // Load information about other targets.
   cmMakefile* mf = this->LocalGenerator->GetMakefile();
   std::vector<std::string> infoFiles;
-  if (const char* infoFilesValue =
-        mf->GetDefinition("CMAKE_TARGET_LINKED_INFO_FILES")) {
-    cmExpandList(infoFilesValue, infoFiles);
-  }
+  mf->GetDefExpandList("CMAKE_TARGET_LINKED_INFO_FILES", infoFiles);
   for (std::string const& i : infoFiles) {
     std::string targetDir = cmSystemTools::GetFilenamePath(i);
     std::string fname = targetDir + "/fortran.internal";

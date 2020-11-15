@@ -333,3 +333,25 @@ Changes made since CMake 3.17.0 include the following.
 * CMake 3.17.0 updated the :cpack_gen:`CPack NSIS Generator` with changes
   that require NSIS 3.0 or later.  CMake 3.17.1 now enforces the use
   of a sufficiently new version.
+
+3.17.3
+------
+
+* Selection of the Objective C or C++ compiler now considers the
+  :envvar:`CC` or :envvar:`CXX` environment variable if the
+  :envvar:`OBJC` or :envvar:`OBJCXX` environment variable is not set.
+
+* The :module:`FindPkgConfig` module now extracts include directories
+  prefixed with ``-isystem`` into the ``*_INCLUDE_DIRS`` variables and
+  :prop_tgt:`INTERFACE_INCLUDE_DIRECTORIES` target properties.
+  Previously they would be places in ``*_CFLAGS_OTHER`` variables and
+  :prop_tgt:`INTERFACE_COMPILE_OPTIONS` target properties.
+
+3.17.5
+------
+
+* The default value of :variable:`CMAKE_AUTOMOC_PATH_PREFIX` was changed to
+  ``OFF`` because this feature can break existing projects that have
+  identically named header files in different include directories.
+  This restores compatibility with behavior of CMake 3.15 and below.
+  The default was also changed to ``OFF`` in 3.16.9.

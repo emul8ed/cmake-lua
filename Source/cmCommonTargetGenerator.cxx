@@ -14,6 +14,7 @@
 #include "cmLocalGenerator.h"
 #include "cmMakefile.h"
 #include "cmOutputConverter.h"
+#include "cmProperty.h"
 #include "cmSourceFile.h"
 #include "cmStateTypes.h"
 #include "cmStringAlgorithms.h"
@@ -73,11 +74,12 @@ void cmCommonTargetGenerator::AddModuleDefinitionFlag(
 void cmCommonTargetGenerator::AppendFortranFormatFlags(
   std::string& flags, cmSourceFile const& source)
 {
-  const char* srcfmt = source.GetProperty("Fortran_FORMAT");
+  const std::string srcfmt = source.GetSafeProperty("Fortran_FORMAT");
   cmOutputConverter::FortranFormat format =
     cmOutputConverter::GetFortranFormat(srcfmt);
   if (format == cmOutputConverter::FortranFormatNone) {
-    const char* tgtfmt = this->GeneratorTarget->GetProperty("Fortran_FORMAT");
+    std::string const& tgtfmt =
+      this->GeneratorTarget->GetSafeProperty("Fortran_FORMAT");
     format = cmOutputConverter::GetFortranFormat(tgtfmt);
   }
   const char* var = nullptr;
@@ -93,6 +95,34 @@ void cmCommonTargetGenerator::AppendFortranFormatFlags(
   }
   if (var) {
     this->LocalCommonGenerator->AppendFlags(
+      flags, this->Makefile->GetSafeDefinition(var));
+  }
+}
+
+void cmCommonTargetGenerator::AppendFortranPreprocessFlags(
+  std::string& flags, cmSourceFile const& source)
+{
+  const std::string srcpp = source.GetSafeProperty("Fortran_PREPROCESS");
+  cmOutputConverter::FortranPreprocess preprocess =
+    cmOutputConverter::GetFortranPreprocess(srcpp);
+  if (preprocess == cmOutputConverter::FortranPreprocess::Unset) {
+    std::string const& tgtpp =
+      this->GeneratorTarget->GetSafeProperty("Fortran_PREPROCESS");
+    preprocess = cmOutputConverter::GetFortranPreprocess(tgtpp);
+  }
+  const char* var = nullptr;
+  switch (preprocess) {
+    case cmOutputConverter::FortranPreprocess::Needed:
+      var = "CMAKE_Fortran_COMPILE_OPTIONS_PREPROCESS_ON";
+      break;
+    case cmOutputConverter::FortranPreprocess::NotNeeded:
+      var = "CMAKE_Fortran_COMPILE_OPTIONS_PREPROCESS_OFF";
+      break;
+    default:
+      break;
+  }
+  if (var) {
+    this->LocalCommonGenerator->AppendCompileOptions(
       flags, this->Makefile->GetSafeDefinition(var));
   }
 }
@@ -224,9 +254,9 @@ std::string cmCommonTargetGenerator::GetAIXExports(std::string const&)
 {
   std::string aixExports;
   if (this->GeneratorTarget->Target->IsAIX()) {
-    if (const char* exportAll =
+    if (cmProp exportAll =
           this->GeneratorTarget->GetProperty("AIX_EXPORT_ALL_SYMBOLS")) {
-      if (cmIsOff(exportAll)) {
+      if (cmIsOff(*exportAll)) {
         aixExports = "-n";
       }
     }

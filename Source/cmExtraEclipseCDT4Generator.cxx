@@ -19,6 +19,7 @@
 #include "cmLocalGenerator.h"
 #include "cmMakefile.h"
 #include "cmMessageType.h"
+#include "cmProperty.h"
 #include "cmSourceFile.h"
 #include "cmSourceGroup.h"
 #include "cmState.h"
@@ -243,8 +244,7 @@ void cmExtraEclipseCDT4Generator::AddEnvVar(std::ostream& out,
   const bool envVarSet = cmSystemTools::GetEnv(envVar, envVarValue);
 
   std::string cacheEntryName = cmStrCat("CMAKE_ECLIPSE_ENVVAR_", envVar);
-  const std::string* cacheValue =
-    lg.GetState()->GetInitializedCacheValue(cacheEntryName);
+  cmProp cacheValue = lg.GetState()->GetInitializedCacheValue(cacheEntryName);
 
   // now we have both, decide which one to use
   std::string valueToUse;
@@ -430,7 +430,7 @@ void cmExtraEclipseCDT4Generator::CreateProjectFile()
   if (this->IsOutOfSourceBuild) {
     // create a linked resource to CMAKE_SOURCE_DIR
     // (this is not done anymore for each project because of
-    // https://gitlab.kitware.com/cmake/cmake/issues/9978 and because I found
+    // https://gitlab.kitware.com/cmake/cmake/-/issues/9978 and because I found
     // it actually quite confusing in bigger projects with many directories and
     // projects, Alex
 
@@ -981,7 +981,6 @@ void cmExtraEclipseCDT4Generator::CreateCProjectFile() const
           }
         } break;
         case cmStateEnums::INTERFACE_LIBRARY:
-          break;
         default:
           break;
       }

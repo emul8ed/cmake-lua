@@ -1,6 +1,6 @@
 set(OUTPUT_NAME "test.zip")
 
-set(COMPRESSION_FORMAT zip)
+set(ARCHIVE_FORMAT zip)
 
 include(${CMAKE_CURRENT_LIST_DIR}/roundtrip.cmake)
 

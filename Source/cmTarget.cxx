@@ -215,7 +215,7 @@ public:
 };
 
 cmTarget::cmTarget(std::string const& name, cmStateEnums::TargetType type,
-                   Visibility vis, cmMakefile* mf, bool perConfig)
+                   Visibility vis, cmMakefile* mf, PerConfig perConfig)
   : impl(cm::make_unique<cmTargetInternals>())
 {
   assert(mf);
@@ -231,15 +231,18 @@ cmTarget::cmTarget(std::string const& name, cmStateEnums::TargetType type,
     (vis == VisibilityImported || vis == VisibilityImportedGlobally);
   impl->ImportedGloballyVisible = vis == VisibilityImportedGlobally;
   impl->BuildInterfaceIncludesAppended = false;
-  impl->PerConfig = perConfig;
+  impl->PerConfig = (perConfig == PerConfig::Yes);
 
   // Check whether this is a DLL platform.
   impl->IsDLLPlatform =
     !impl->Makefile->GetSafeDefinition("CMAKE_IMPORT_LIBRARY_SUFFIX").empty();
 
   // Check whether we are targeting AIX.
-  impl->IsAIX =
-    (impl->Makefile->GetSafeDefinition("CMAKE_SYSTEM_NAME") == "AIX");
+  {
+    std::string const& systemName =
+      impl->Makefile->GetSafeDefinition("CMAKE_SYSTEM_NAME");
+    impl->IsAIX = (systemName == "AIX" || systemName == "OS400");
+  }
 
   // Check whether we are targeting an Android platform.
   impl->IsAndroid =
@@ -304,6 +307,7 @@ cmTarget::cmTarget(std::string const& name, cmStateEnums::TargetType type,
     initProp("Fortran_FORMAT");
     initProp("Fortran_MODULE_DIRECTORY");
     initProp("Fortran_COMPILER_LAUNCHER");
+    initProp("Fortran_PREPROCESS");
     initProp("GNUtoMS");
     initProp("OSX_ARCHITECTURES");
     initProp("IOS_INSTALL_COMBINED");
@@ -360,6 +364,7 @@ cmTarget::cmTarget(std::string const& name, cmStateEnums::TargetType type,
     initProp("CUDA_SEPARABLE_COMPILATION");
     initProp("CUDA_RESOLVE_DEVICE_SYMBOLS");
     initProp("CUDA_RUNTIME_LIBRARY");
+    initProp("CUDA_ARCHITECTURES");
     initProp("LINK_SEARCH_START_STATIC");
     initProp("LINK_SEARCH_END_STATIC");
     initProp("Swift_LANGUAGE_VERSION");
@@ -368,6 +373,7 @@ cmTarget::cmTarget(std::string const& name, cmStateEnums::TargetType type,
     initProp("DISABLE_PRECOMPILE_HEADERS");
     initProp("UNITY_BUILD");
     initPropValue("UNITY_BUILD_BATCH_SIZE", "8");
+    initPropValue("UNITY_BUILD_MODE", "BATCH");
     initPropValue("PCH_WARN_INVALID", "ON");
 #ifdef __APPLE__
     if (this->GetGlobalGenerator()->IsXcode()) {
@@ -527,7 +533,7 @@ cmTarget::cmTarget(std::string const& name, cmStateEnums::TargetType type,
     initProp("JOB_POOL_PRECOMPILE_HEADER");
   }
 
-  if (impl->TargetType <= cmStateEnums::UTILITY) {
+  if (impl->TargetType <= cmStateEnums::GLOBAL_TARGET) {
     initProp("DOTNET_TARGET_FRAMEWORK");
     initProp("DOTNET_TARGET_FRAMEWORK_VERSION");
   }
@@ -1785,13 +1791,15 @@ cmProp cmTarget::GetProperty(const std::string& prop) const
   return retVal;
 }
 
-const char* cmTarget::GetSafeProperty(const std::string& prop) const
+std::string const& cmTarget::GetSafeProperty(std::string const& prop) const
 {
   cmProp ret = this->GetProperty(prop);
-  if (!ret) {
-    return "";
+  if (ret) {
+    return *ret;
   }
-  return ret->c_str();
+
+  static std::string const s_empty;
+  return s_empty;
 }
 
 bool cmTarget::GetPropertyAsBool(const std::string& prop) const

@@ -9,9 +9,9 @@
 
 #include <cmext/algorithm>
 
-#include "cm_curl.h"
-#include "cm_jsoncpp_reader.h"
-#include "cm_jsoncpp_value.h"
+#include <cm3p/curl/curl.h>
+#include <cm3p/json/reader.h>
+#include <cm3p/json/value.h>
 
 #include "cmAlgorithms.h"
 #include "cmCTest.h"
@@ -21,6 +21,7 @@
 #include "cmCurl.h"
 #include "cmDuration.h"
 #include "cmGeneratedFileStream.h"
+#include "cmProperty.h"
 #include "cmState.h"
 #include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"

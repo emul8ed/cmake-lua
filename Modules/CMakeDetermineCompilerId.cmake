@@ -381,7 +381,11 @@ Id flags: ${testflags} ${CMAKE_${lang}_COMPILER_ID_FLAGS_ALWAYS}
       if(CMAKE_VS_PLATFORM_NAME STREQUAL x64)
         set(id_ItemDefinitionGroup_entry "<CudaCompile><TargetMachinePlatform>64</TargetMachinePlatform><AdditionalOptions>%(AdditionalOptions)-v</AdditionalOptions></CudaCompile>")
       endif()
-      set(id_Link_AdditionalDependencies "<AdditionalDependencies>cudart.lib</AdditionalDependencies>")
+      if(CMAKE_CUDA_FLAGS MATCHES "(^| )-cudart +shared( |$)")
+        set(id_Link_AdditionalDependencies "<AdditionalDependencies>cudart.lib</AdditionalDependencies>")
+      else()
+        set(id_Link_AdditionalDependencies "<AdditionalDependencies>cudart_static.lib</AdditionalDependencies>")
+      endif()
     endif()
     configure_file(${CMAKE_ROOT}/Modules/CompilerId/VS-${v}.${ext}.in
       ${id_dir}/CompilerId${lang}.${ext} @ONLY)
@@ -464,6 +468,12 @@ Id flags: ${testflags} ${CMAKE_${lang}_COMPILER_ID_FLAGS_ALWAYS}
       if(last_stdlib_match MATCHES "${stdlib_regex}")
         set(id_clang_cxx_library "CLANG_CXX_LIBRARY = \"${CMAKE_MATCH_3}\";")
       endif()
+    endif()
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_OSX_SYSROOT MATCHES "^$|[Mm][Aa][Cc][Oo][Ss]")
+      # When targeting macOS, use only the host architecture.
+      set(id_archs [[ARCHS = "$(NATIVE_ARCH_ACTUAL)";]])
+    else()
+      set(id_archs "")
     endif()
     configure_file(${CMAKE_ROOT}/Modules/CompilerId/Xcode-3.pbxproj.in
       ${id_dir}/CompilerId${lang}.xcodeproj/project.pbxproj @ONLY)

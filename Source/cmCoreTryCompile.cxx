@@ -8,9 +8,9 @@
 #include <sstream>
 #include <utility>
 
-#include "cmsys/Directory.hxx"
+#include <cmext/string_view>
 
-#include "cm_static_string_view.hxx"
+#include "cmsys/Directory.hxx"
 
 #include "cmExportTryCompileFileGenerator.h"
 #include "cmGlobalGenerator.h"
@@ -40,6 +40,12 @@ static std::string const kCMAKE_CXX_LINK_NO_PIE_SUPPORTED =
   "CMAKE_CXX_LINK_NO_PIE_SUPPORTED";
 static std::string const kCMAKE_CXX_LINK_PIE_SUPPORTED =
   "CMAKE_CXX_LINK_PIE_SUPPORTED";
+static std::string const kCMAKE_CUDA_ARCHITECTURES =
+  "CMAKE_CUDA_ARCHITECTURES";
+static std::string const kCMAKE_CUDA_COMPILER_TARGET =
+  "CMAKE_CUDA_COMPILER_TARGET";
+static std::string const kCMAKE_CUDA_RUNTIME_LIBRARY =
+  "CMAKE_CUDA_RUNTIME_LIBRARY";
 static std::string const kCMAKE_ENABLE_EXPORTS = "CMAKE_ENABLE_EXPORTS";
 static std::string const kCMAKE_LINK_SEARCH_END_STATIC =
   "CMAKE_LINK_SEARCH_END_STATIC";
@@ -561,6 +567,14 @@ int cmCoreTryCompile::TryCompileCode(std::vector<std::string> const& argv,
               *msvcRuntimeLibraryDefault ? "NEW" : "OLD");
     }
 
+    /* Set CUDA architectures policy to match outer project.  */
+    if (this->Makefile->GetPolicyStatus(cmPolicies::CMP0104) !=
+          cmPolicies::NEW &&
+        testLangs.find("CUDA") != testLangs.end() &&
+        this->Makefile->GetSafeDefinition(kCMAKE_CUDA_ARCHITECTURES).empty()) {
+      fprintf(fout, "cmake_policy(SET CMP0104 OLD)\n");
+    }
+
     std::string projectLangs;
     for (std::string const& li : testLangs) {
       projectLangs += " " + li;
@@ -711,6 +725,9 @@ int cmCoreTryCompile::TryCompileCode(std::vector<std::string> const& argv,
       vars.insert(kCMAKE_C_COMPILER_TARGET);
       vars.insert(kCMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN);
       vars.insert(kCMAKE_CXX_COMPILER_TARGET);
+      vars.insert(kCMAKE_CUDA_ARCHITECTURES);
+      vars.insert(kCMAKE_CUDA_COMPILER_TARGET);
+      vars.insert(kCMAKE_CUDA_RUNTIME_LIBRARY);
       vars.insert(kCMAKE_ENABLE_EXPORTS);
       vars.insert(kCMAKE_LINK_SEARCH_END_STATIC);
       vars.insert(kCMAKE_LINK_SEARCH_START_STATIC);
@@ -1033,7 +1050,9 @@ void cmCoreTryCompile::CleanupFiles(std::string const& binDir)
   std::set<std::string> deletedFiles;
   for (unsigned long i = 0; i < dir.GetNumberOfFiles(); ++i) {
     const char* fileName = dir.GetFile(i);
-    if (strcmp(fileName, ".") != 0 && strcmp(fileName, "..") != 0) {
+    if (strcmp(fileName, ".") != 0 && strcmp(fileName, "..") != 0 &&
+        // Do not delete NFS temporary files.
+        !cmHasPrefix(fileName, ".nfs")) {
       if (deletedFiles.insert(fileName).second) {
         std::string const fullPath =
           std::string(binDir).append("/").append(fileName);

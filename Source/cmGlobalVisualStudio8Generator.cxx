@@ -142,6 +142,9 @@ bool cmGlobalVisualStudio8Generator::AddCheckTarget()
 
   // Add a custom rule to re-run CMake if any input files changed.
   {
+    // The custom rule runs cmake so set UTF-8 pipes.
+    bool stdPipesUTF8 = true;
+
     // Collect the input files used to generate all targets in this
     // project.
     std::vector<std::string> listFiles;
@@ -160,7 +163,7 @@ bool cmGlobalVisualStudio8Generator::AddCheckTarget()
       lg.AddCustomCommandToTarget(
         CMAKE_CHECK_BUILD_SYSTEM_TARGET, byproducts, no_depends,
         verifyCommandLines, cmCustomCommandType::PRE_BUILD,
-        "Checking File Globs", no_working_directory, false);
+        "Checking File Globs", no_working_directory, stdPipesUTF8);
 
       // Ensure ZERO_CHECK always runs in Visual Studio using MSBuild,
       // otherwise the prebuild command will not be run.
@@ -192,7 +195,8 @@ bool cmGlobalVisualStudio8Generator::AddCheckTarget()
     if (cmSourceFile* file = lg.AddCustomCommandToOutput(
           stamps, no_byproducts, listFiles, no_main_dependency,
           no_implicit_depends, commandLines, "Checking Build System",
-          no_working_directory, true, false)) {
+          no_working_directory, true, false, false, false, "", "",
+          stdPipesUTF8)) {
       gt->AddSource(file->ResolveFullPath());
     } else {
       cmSystemTools::Error("Error adding rule for " + stamps[0]);
@@ -240,9 +244,9 @@ void cmGlobalVisualStudio8Generator::WriteProjectConfigurations(
     std::vector<std::string> mapConfig;
     const char* dstConfig = i.c_str();
     if (target.GetProperty("EXTERNAL_MSPROJECT")) {
-      if (const char* m = target.GetProperty("MAP_IMPORTED_CONFIG_" +
-                                             cmSystemTools::UpperCase(i))) {
-        cmExpandList(m, mapConfig);
+      if (cmProp m = target.GetProperty("MAP_IMPORTED_CONFIG_" +
+                                        cmSystemTools::UpperCase(i))) {
+        cmExpandList(*m, mapConfig);
         if (!mapConfig.empty()) {
           dstConfig = mapConfig[0].c_str();
         }
@@ -282,15 +286,15 @@ bool cmGlobalVisualStudio8Generator::NeedsDeploy(
     return false;
   }
 
-  if (const char* prop = target.GetProperty("VS_SOLUTION_DEPLOY")) {
+  if (cmProp prop = target.GetProperty("VS_SOLUTION_DEPLOY")) {
     // If set, it dictates behavior
     return cmIsOn(
-      cmGeneratorExpression::Evaluate(prop, target.LocalGenerator, config));
+      cmGeneratorExpression::Evaluate(*prop, target.LocalGenerator, config));
   }
 
   // To be deprecated, disable deployment even if target supports it.
-  if (const char* prop = target.GetProperty("VS_NO_SOLUTION_DEPLOY")) {
-    if (cmIsOn(cmGeneratorExpression::Evaluate(prop, target.LocalGenerator,
+  if (cmProp prop = target.GetProperty("VS_NO_SOLUTION_DEPLOY")) {
+    if (cmIsOn(cmGeneratorExpression::Evaluate(*prop, target.LocalGenerator,
                                                config))) {
       // If true, always disable deployment
       return false;

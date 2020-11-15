@@ -7,12 +7,14 @@
 #include <iostream>
 #include <sstream>
 
+#include <cm3p/archive.h>
+#include <cm3p/archive_entry.h>
+
 #include "cmsys/Directory.hxx"
 #include "cmsys/Encoding.hxx"
 #include "cmsys/FStream.hxx"
 
 #include "cm_get_date.h"
-#include "cm_libarchive.h"
 
 #include "cmLocale.h"
 #include "cmStringAlgorithms.h"
@@ -280,7 +282,12 @@ bool cmArchiveWrite::AddFile(const char* file, size_t skip, const char* prefix)
       time_t epochTime;
       iss >> epochTime;
       if (iss.eof() && !iss.fail()) {
+        // Set all of the file times to the epoch time to handle archive
+        // formats that include creation/access time.
         archive_entry_set_mtime(e, epochTime, 0);
+        archive_entry_set_atime(e, epochTime, 0);
+        archive_entry_set_ctime(e, epochTime, 0);
+        archive_entry_set_birthtime(e, epochTime, 0);
       }
     }
   }

@@ -6,9 +6,7 @@
 #  define _XOPEN_SOURCE_EXTENDED
 #endif
 
-#if defined(_WIN32) &&                                                        \
-  (defined(_MSC_VER) || defined(__WATCOMC__) || defined(__BORLANDC__) ||      \
-   defined(__MINGW32__))
+#if defined(_WIN32) && (defined(_MSC_VER) || defined(__MINGW32__))
 #  define KWSYS_WINDOWS_DIRS
 #else
 #  if defined(__SUNPRO_CC)
@@ -24,6 +22,7 @@
 #include KWSYS_HEADER(Encoding.h)
 #include KWSYS_HEADER(Encoding.hxx)
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <set>
@@ -49,27 +48,27 @@
 #  pragma set woff 1375 /* base class destructor not virtual */
 #endif
 
-#include <ctype.h>
-#include <errno.h>
+#include <cctype>
+#include <cerrno>
 #ifdef __QNX__
 #  include <malloc.h> /* for malloc/free on QNX */
 #endif
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
 
 #if defined(_WIN32) && !defined(_MSC_VER) && defined(__GNUC__)
 #  include <strings.h> /* for strcasecmp */
 #endif
 
 #ifdef _MSC_VER
-#  define umask _umask // Note this is still umask on Borland
+#  define umask _umask
 #endif
 
 // support for realpath call
 #ifndef _WIN32
-#  include <limits.h>
+#  include <climits>
 #  include <pwd.h>
 #  include <sys/ioctl.h>
 #  include <sys/time.h>
@@ -80,7 +79,7 @@
 #    include <sys/param.h>
 #    include <termios.h>
 #  endif
-#  include <signal.h> /* sigprocmask */
+#  include <csignal> /* sigprocmask */
 #endif
 
 #ifdef __linux
@@ -153,9 +152,7 @@ public:
 }
 #endif
 
-#if defined(_WIN32) &&                                                        \
-  (defined(_MSC_VER) || defined(__WATCOMC__) || defined(__BORLANDC__) ||      \
-   defined(__MINGW32__))
+#if defined(_WIN32) && (defined(_MSC_VER) || defined(__MINGW32__))
 #  include <direct.h>
 #  include <io.h>
 #  define _unlink unlink
@@ -168,13 +165,6 @@ public:
 #  define KWSYS_SYSTEMTOOLS_MAXPATH MAXPATHLEN
 #else
 #  define KWSYS_SYSTEMTOOLS_MAXPATH 16384
-#endif
-#if defined(__WATCOMC__)
-#  include <direct.h>
-#  define _mkdir mkdir
-#  define _rmdir rmdir
-#  define _getcwd getcwd
-#  define _chdir chdir
 #endif
 
 #if defined(__BEOS__) && !defined(__ZETA__)
@@ -258,11 +248,7 @@ inline const char* Getcwd(char* buf, unsigned int len)
 }
 inline int Chdir(const std::string& dir)
 {
-#  if defined(__BORLANDC__)
-  return chdir(dir.c_str());
-#  else
   return _wchdir(KWSYS_NAMESPACE::Encoding::ToWide(dir).c_str());
-#  endif
 }
 inline void Realpath(const std::string& path, std::string& resolved_path,
                      std::string* errorMessage = 0)
@@ -892,8 +878,12 @@ const char* SystemTools::GetExecutableExtension()
 FILE* SystemTools::Fopen(const std::string& file, const char* mode)
 {
 #ifdef _WIN32
+  // Remove any 'e', which is supported on UNIX, but not Windows.
+  std::wstring trimmedMode = Encoding::ToWide(mode);
+  trimmedMode.erase(std::remove(trimmedMode.begin(), trimmedMode.end(), L'e'),
+                    trimmedMode.end());
   return _wfopen(Encoding::ToWindowsExtendedPath(file).c_str(),
-                 Encoding::ToWide(mode).c_str());
+                 trimmedMode.c_str());
 #else
   return fopen(file.c_str(), mode);
 #endif
@@ -932,15 +922,9 @@ bool SystemTools::MakeDirectory(const std::string& path, const mode_t* mode)
   }
   topdir = dir;
   if (Mkdir(topdir, mode) != 0) {
-    // There is a bug in the Borland Run time library which makes MKDIR
-    // return EACCES when it should return EEXISTS
     // if it is some other error besides directory exists
     // then return false
-    if ((errno != EEXIST)
-#ifdef __BORLANDC__
-        && (errno != EACCES)
-#endif
-    ) {
+    if (errno != EEXIST) {
       return false;
     }
   }
@@ -1443,11 +1427,7 @@ int SystemTools::Stat(const std::string& path, SystemTools::Stat_t* buf)
   // long paths, but _wstat64 rejects paths with '?' in them, thinking
   // they are wildcards.
   std::wstring const& wpath = Encoding::ToWide(path);
-#  if defined(__BORLANDC__)
-  return _wstati64(wpath.c_str(), buf);
-#  else
   return _wstat64(wpath.c_str(), buf);
-#  endif
 #else
   return stat(path.c_str(), buf);
 #endif
@@ -1904,7 +1884,7 @@ std::vector<std::string> SystemTools::SplitString(const std::string& p,
     paths.emplace_back("/");
   }
   std::string::size_type pos1 = 0;
-  std::string::size_type pos2 = path.find(sep, pos1 + 1);
+  std::string::size_type pos2 = path.find(sep, pos1);
   while (pos2 != std::string::npos) {
     paths.push_back(path.substr(pos1, pos2 - pos1));
     pos1 = pos2 + 1;
@@ -2113,7 +2093,7 @@ std::string SystemTools::ConvertToUnixOutputPath(const std::string& path)
     ret.erase(pos, 1);
   }
   // escape spaces and () in the path
-  if (ret.find_first_of(" ") != std::string::npos) {
+  if (ret.find_first_of(' ') != std::string::npos) {
     std::string result;
     char lastch = 1;
     for (const char* ch = ret.c_str(); *ch != '\0'; ++ch) {
@@ -2511,8 +2491,8 @@ bool SystemTools::CopyADirectory(const std::string& source,
     return false;
   }
   for (fileNum = 0; fileNum < dir.GetNumberOfFiles(); ++fileNum) {
-    if (strcmp(dir.GetFile(static_cast<unsigned long>(fileNum)), ".") &&
-        strcmp(dir.GetFile(static_cast<unsigned long>(fileNum)), "..")) {
+    if (strcmp(dir.GetFile(static_cast<unsigned long>(fileNum)), ".") != 0 &&
+        strcmp(dir.GetFile(static_cast<unsigned long>(fileNum)), "..") != 0) {
       std::string fullPath = source;
       fullPath += "/";
       fullPath += dir.GetFile(static_cast<unsigned long>(fileNum));
@@ -2674,8 +2654,8 @@ bool SystemTools::RemoveADirectory(const std::string& source)
   dir.Load(source);
   size_t fileNum;
   for (fileNum = 0; fileNum < dir.GetNumberOfFiles(); ++fileNum) {
-    if (strcmp(dir.GetFile(static_cast<unsigned long>(fileNum)), ".") &&
-        strcmp(dir.GetFile(static_cast<unsigned long>(fileNum)), "..")) {
+    if (strcmp(dir.GetFile(static_cast<unsigned long>(fileNum)), ".") != 0 &&
+        strcmp(dir.GetFile(static_cast<unsigned long>(fileNum)), "..") != 0) {
       std::string fullPath = source;
       fullPath += "/";
       fullPath += dir.GetFile(static_cast<unsigned long>(fileNum));
@@ -3153,7 +3133,7 @@ bool SystemTools::SplitProgramPath(const std::string& in_name,
   SystemTools::ConvertToUnixSlashes(dir);
 
   if (!SystemTools::FileIsDirectory(dir)) {
-    std::string::size_type slashPos = dir.rfind("/");
+    std::string::size_type slashPos = dir.rfind('/');
     if (slashPos != std::string::npos) {
       file = dir.substr(slashPos + 1);
       dir.resize(slashPos);
@@ -3711,7 +3691,7 @@ std::string SystemTools::GetFilenamePath(const std::string& filename)
   std::string fn = filename;
   SystemTools::ConvertToUnixSlashes(fn);
 
-  std::string::size_type slash_pos = fn.rfind("/");
+  std::string::size_type slash_pos = fn.rfind('/');
   if (slash_pos == 0) {
     return "/";
   }

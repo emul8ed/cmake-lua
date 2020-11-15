@@ -6,7 +6,7 @@
 #include <cassert>
 #include <chrono>
 #include <cmath>
-#include <cstddef>
+#include <cstddef> // IWYU pragma: keep
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
@@ -21,15 +21,14 @@
 #include <cm/memory>
 #include <cmext/algorithm>
 
+#include <cm3p/json/value.h>
+#include <cm3p/json/writer.h>
+#include <cm3p/uv.h>
+
 #include "cmsys/FStream.hxx"
 #include "cmsys/SystemInformation.hxx"
 
-#include "cm_jsoncpp_value.h"
-#include "cm_jsoncpp_writer.h"
-#include "cm_uv.h"
-
 #include "cmAffinity.h"
-#include "cmAlgorithms.h"
 #include "cmCTest.h"
 #include "cmCTestBinPacker.h"
 #include "cmCTestRunTest.h"
@@ -138,7 +137,7 @@ void cmCTestMultiProcessHandler::RunTests()
   uv_run(&this->Loop, UV_RUN_DEFAULT);
   uv_loop_close(&this->Loop);
 
-  if (!this->StopTimePassed) {
+  if (!this->StopTimePassed && !this->CheckStopOnFailure()) {
     assert(this->Completed == this->Total);
     assert(this->Tests.empty());
   }
@@ -188,7 +187,7 @@ bool cmCTestMultiProcessHandler::StartTestProcess(int test)
   // Find any failed dependencies for this test. We assume the more common
   // scenario has no failed tests, so make it the outer loop.
   for (std::string const& f : *this->Failed) {
-    if (cmContains(this->Properties[test]->RequireSuccessDepends, f)) {
+    if (cm::contains(this->Properties[test]->RequireSuccessDepends, f)) {
       testRun->AddFailedDependency(f);
     }
   }
@@ -368,6 +367,11 @@ void cmCTestMultiProcessHandler::CheckResourcesAvailable()
   }
 }
 
+bool cmCTestMultiProcessHandler::CheckStopOnFailure()
+{
+  return this->CTest->GetStopOnFailure();
+}
+
 bool cmCTestMultiProcessHandler::CheckStopTimePassed()
 {
   if (!this->StopTimePassed) {
@@ -445,7 +449,7 @@ bool cmCTestMultiProcessHandler::StartTest(int test)
 {
   // Check for locked resources
   for (std::string const& i : this->Properties[test]->LockedResources) {
-    if (cmContains(this->LockedResources, i)) {
+    if (cm::contains(this->LockedResources, i)) {
       return false;
     }
   }
@@ -481,6 +485,10 @@ void cmCTestMultiProcessHandler::StartNextTests()
   }
 
   if (this->CheckStopTimePassed()) {
+    return;
+  }
+
+  if (this->CheckStopOnFailure() && !this->Failed->empty()) {
     return;
   }
 
@@ -802,7 +810,7 @@ void cmCTestMultiProcessHandler::CreateParallelTestCostList()
   // In parallel test runs add previously failed tests to the front
   // of the cost list and queue other tests for further sorting
   for (auto const& t : this->Tests) {
-    if (cmContains(this->LastTestsFailed, this->Properties[t.first]->Name)) {
+    if (cm::contains(this->LastTestsFailed, this->Properties[t.first]->Name)) {
       // If the test failed last time, it should be run first.
       this->SortedTests.push_back(t.first);
       alreadySortedTests.insert(t.first);
@@ -841,7 +849,7 @@ void cmCTestMultiProcessHandler::CreateParallelTestCostList()
                      TestComparator(this));
 
     for (auto const& j : sortedCopy) {
-      if (!cmContains(alreadySortedTests, j)) {
+      if (!cm::contains(alreadySortedTests, j)) {
         this->SortedTests.push_back(j);
         alreadySortedTests.insert(j);
       }
@@ -873,7 +881,7 @@ void cmCTestMultiProcessHandler::CreateSerialTestCostList()
   TestSet alreadySortedTests;
 
   for (int test : presortedList) {
-    if (cmContains(alreadySortedTests, test)) {
+    if (cm::contains(alreadySortedTests, test)) {
       continue;
     }
 
@@ -881,7 +889,7 @@ void cmCTestMultiProcessHandler::CreateSerialTestCostList()
     GetAllTestDependencies(test, dependencies);
 
     for (int testDependency : dependencies) {
-      if (!cmContains(alreadySortedTests, testDependency)) {
+      if (!cm::contains(alreadySortedTests, testDependency)) {
         alreadySortedTests.insert(testDependency);
         this->SortedTests.push_back(testDependency);
       }

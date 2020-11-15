@@ -28,6 +28,7 @@
 #include "cmMakefile.h"
 #include "cmMakefileTargetGenerator.h"
 #include "cmOutputConverter.h"
+#include "cmProperty.h"
 #include "cmRange.h"
 #include "cmRulePlaceholderExpander.h"
 #include "cmSourceFile.h"
@@ -47,37 +48,6 @@
 #  include "cmDependsFortran.h"
 #  include "cmDependsJava.h"
 #endif
-
-// Escape special characters in Makefile dependency lines
-class cmMakeSafe
-{
-public:
-  cmMakeSafe(const char* s)
-    : Data(s)
-  {
-  }
-  cmMakeSafe(std::string const& s)
-    : Data(s.c_str())
-  {
-  }
-
-private:
-  const char* Data;
-  friend std::ostream& operator<<(std::ostream& os, cmMakeSafe const& self)
-  {
-    for (const char* c = self.Data; *c; ++c) {
-      switch (*c) {
-        case '=':
-          os << "$(EQUALS)";
-          break;
-        default:
-          os << *c;
-          break;
-      }
-    }
-    return os;
-  }
-};
 
 // Helper function used below.
 static std::string cmSplitExtension(std::string const& in, std::string& base)
@@ -498,6 +468,14 @@ const std::string& cmLocalUnixMakefileGenerator3::GetHomeRelativeOutputPath()
   return this->HomeRelativeOutputPath;
 }
 
+std::string cmLocalUnixMakefileGenerator3::ConvertToMakefilePath(
+  std::string const& path) const
+{
+  cmGlobalUnixMakefileGenerator3* gg =
+    static_cast<cmGlobalUnixMakefileGenerator3*>(this->GlobalGenerator);
+  return gg->ConvertToMakefilePath(path);
+}
+
 void cmLocalUnixMakefileGenerator3::WriteMakeRule(
   std::ostream& os, const char* comment, const std::string& target,
   const std::vector<std::string>& depends,
@@ -528,7 +506,7 @@ void cmLocalUnixMakefileGenerator3::WriteMakeRule(
   }
 
   // Construct the left hand side of the rule.
-  std::string tgt = cmSystemTools::ConvertToOutputPath(
+  std::string tgt = this->ConvertToMakefilePath(
     this->MaybeConvertToRelativePath(this->GetBinaryDirectory(), target));
 
   const char* space = "";
@@ -542,30 +520,30 @@ void cmLocalUnixMakefileGenerator3::WriteMakeRule(
   if (symbolic) {
     if (const char* sym =
           this->Makefile->GetDefinition("CMAKE_MAKE_SYMBOLIC_RULE")) {
-      os << cmMakeSafe(tgt) << space << ": " << sym << "\n";
+      os << tgt << space << ": " << sym << "\n";
     }
   }
 
   // Write the rule.
   if (depends.empty()) {
     // No dependencies.  The commands will always run.
-    os << cmMakeSafe(tgt) << space << ":\n";
+    os << tgt << space << ":\n";
   } else {
     // Split dependencies into multiple rule lines.  This allows for
     // very long dependency lists even on older make implementations.
     std::string binDir = this->GetBinaryDirectory();
     for (std::string const& depend : depends) {
-      replace = depend;
-      replace = cmSystemTools::ConvertToOutputPath(
-        this->MaybeConvertToRelativePath(binDir, replace));
-      os << cmMakeSafe(tgt) << space << ": " << cmMakeSafe(replace) << "\n";
+      os << tgt << space << ": "
+         << this->ConvertToMakefilePath(
+              this->MaybeConvertToRelativePath(binDir, depend))
+         << '\n';
     }
   }
 
   // Write the list of commands.
   os << cmWrap("\t", commands, "", "\n") << "\n";
   if (symbolic && !this->IsWatcomWMake()) {
-    os << ".PHONY : " << cmMakeSafe(tgt) << "\n";
+    os << ".PHONY : " << tgt << "\n";
   }
   os << "\n";
   // Add the output to the local help if requested.
@@ -735,9 +713,10 @@ void cmLocalUnixMakefileGenerator3::WriteSpecialTargetsTop(
     // "VERBOSE=1" to be added as a make variable which will change the
     // name of this special target.  This gives a make-time choice to
     // the user.
-    this->WriteMakeRule(makefileStream,
-                        "Suppress display of executed commands.",
-                        "$(VERBOSE).SILENT", no_depends, no_commands, false);
+    // Write directly to the stream since WriteMakeRule escapes '$'.
+    makefileStream << "#Suppress display of executed commands.\n"
+                      "$(VERBOSE).SILENT:\n"
+                      "\n";
   }
 
   // Work-around for makes that drop rules that have no dependencies
@@ -1465,7 +1444,7 @@ bool cmLocalUnixMakefileGenerator3::ScanDependencies(
     // Create the scanner for this language
     std::unique_ptr<cmDepends> scanner;
     if (lang == "C" || lang == "CXX" || lang == "RC" || lang == "ASM" ||
-        lang == "CUDA") {
+        lang == "OBJC" || lang == "OBJCXX" || lang == "CUDA") {
       // TODO: Handle RC (resource files) dependencies correctly.
       scanner = cm::make_unique<cmDependsC>(this, targetDir, lang, &validDeps);
     }
@@ -1569,10 +1548,8 @@ void cmLocalUnixMakefileGenerator3::WriteLocalAllRules(
       std::vector<std::string> commands;
       std::vector<std::string> depends;
 
-      const char* text = gt->GetProperty("EchoString");
-      if (!text) {
-        text = "Running external command ...";
-      }
+      cmProp p = gt->GetProperty("EchoString");
+      const char* text = p ? p->c_str() : "Running external command ...";
       depends.reserve(gt->GetUtilities().size());
       for (BT<std::pair<std::string, bool>> const& u : gt->GetUtilities()) {
         depends.push_back(u.Value.first);
@@ -1893,9 +1870,9 @@ void cmLocalUnixMakefileGenerator3::WriteDependLanguageInfo(
         this->Makefile->GetProperty("IMPLICIT_DEPENDS_INCLUDE_TRANSFORM")) {
     cmExpandList(*xform, transformRules);
   }
-  if (const char* xform =
+  if (cmProp xform =
         target->GetProperty("IMPLICIT_DEPENDS_INCLUDE_TRANSFORM")) {
-    cmExpandList(xform, transformRules);
+    cmExpandList(*xform, transformRules);
   }
   if (!transformRules.empty()) {
     cmakefileStream << "set(CMAKE_INCLUDE_TRANSFORMS\n";

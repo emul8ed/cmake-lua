@@ -46,6 +46,7 @@ run_cmake_command(G_no-arg ${CMAKE_COMMAND} -B DummyBuildDir -G)
 run_cmake_command(G_bad-arg ${CMAKE_COMMAND} -B DummyBuildDir -G NoSuchGenerator)
 run_cmake_command(P_no-arg ${CMAKE_COMMAND} -P)
 run_cmake_command(P_no-file ${CMAKE_COMMAND} -P nosuchscriptfile.cmake)
+run_cmake_command(P_arbitrary_args ${CMAKE_COMMAND} -P "${RunCMake_SOURCE_DIR}/P_arbitrary_args.cmake" -- -DFOO)
 
 run_cmake_command(build-no-dir
   ${CMAKE_COMMAND} --build)
@@ -457,6 +458,44 @@ if(NOT WIN32 AND NOT CYGWIN)
   run_cmake_command(E_rm_recursive_file_link_non_existing
     ${CMAKE_COMMAND} -E rm -r ${out}/non_existing_file_link.txt)
 endif()
+unset(out)
+
+# cat tests
+set(out ${RunCMake_BINARY_DIR}/cat_tests)
+file(REMOVE_RECURSE "${out}")
+file(MAKE_DIRECTORY ${out})
+run_cmake_command(E_cat_non_existing_file
+  ${CMAKE_COMMAND} -E cat ${out}/non-existing-file.txt)
+
+if(UNIX)
+  # test non readable file only if not root
+  execute_process(
+    COMMAND id -u $ENV{USER}
+    OUTPUT_VARIABLE uid
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+  if(NOT "${uid}" STREQUAL "0")
+    # Create non readable file
+    set(inside_folder "${out}/in")
+    file(MAKE_DIRECTORY ${inside_folder})
+    file(WRITE "${inside_folder}/non_readable_file.txt" "first file to append\n")
+    file(COPY "${inside_folder}/non_readable_file.txt" DESTINATION "${out}" FILE_PERMISSIONS OWNER_WRITE)
+    run_cmake_command(E_cat_non_readable_file
+      ${CMAKE_COMMAND} -E cat "${out}/non_readable_file.txt")
+  endif()
+endif()
+
+run_cmake_command(E_cat_option_not_handled
+  ${CMAKE_COMMAND} -E cat -f)
+
+run_cmake_command(E_cat_directory
+  ${CMAKE_COMMAND} -E cat ${out})
+
+file(WRITE "${out}/first_file.txt" "first file to append\n")
+file(WRITE "${out}/second_file.txt" "second file to append\n")
+file(WRITE "${out}/unicode_file.txt" "àéùç - 한국어") # Korean in Korean
+run_cmake_command(E_cat_good_cat
+  ${CMAKE_COMMAND} -E cat "${out}/first_file.txt" "${out}/second_file.txt" "${out}/unicode_file.txt")
 unset(out)
 
 run_cmake_command(E_env-no-command0 ${CMAKE_COMMAND} -E env)

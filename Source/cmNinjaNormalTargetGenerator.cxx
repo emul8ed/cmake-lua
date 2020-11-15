@@ -29,6 +29,7 @@
 #include "cmNinjaTypes.h"
 #include "cmOSXBundleGenerator.h"
 #include "cmOutputConverter.h"
+#include "cmProperty.h"
 #include "cmRulePlaceholderExpander.h"
 #include "cmSourceFile.h"
 #include "cmState.h"
@@ -233,11 +234,7 @@ void cmNinjaNormalTargetGenerator::WriteDeviceLinkRule(
     vars.LinkFlags = "$LINK_FLAGS";
     vars.Manifests = "$MANIFESTS";
 
-    std::string langFlags;
-    if (this->GetGeneratorTarget()->GetType() != cmStateEnums::EXECUTABLE) {
-      langFlags += "$LANGUAGE_COMPILE_FLAGS $ARCH_FLAGS";
-      vars.LanguageCompileFlags = langFlags.c_str();
-    }
+    vars.LanguageCompileFlags = "$LANGUAGE_COMPILE_FLAGS";
 
     std::string launcher;
     const char* val = this->GetLocalGenerator()->GetRuleLauncher(
@@ -457,14 +454,12 @@ std::vector<std::string> cmNinjaNormalTargetGenerator::ComputeDeviceLinkCmd()
     case cmStateEnums::STATIC_LIBRARY:
     case cmStateEnums::SHARED_LIBRARY:
     case cmStateEnums::MODULE_LIBRARY: {
-      const std::string cudaLinkCmd(
-        this->GetMakefile()->GetDefinition("CMAKE_CUDA_DEVICE_LINK_LIBRARY"));
-      cmExpandList(cudaLinkCmd, linkCmds);
+      this->GetMakefile()->GetDefExpandList("CMAKE_CUDA_DEVICE_LINK_LIBRARY",
+                                            linkCmds);
     } break;
     case cmStateEnums::EXECUTABLE: {
-      const std::string cudaLinkCmd(this->GetMakefile()->GetDefinition(
-        "CMAKE_CUDA_DEVICE_LINK_EXECUTABLE"));
-      cmExpandList(cudaLinkCmd, linkCmds);
+      this->GetMakefile()->GetDefExpandList(
+        "CMAKE_CUDA_DEVICE_LINK_EXECUTABLE", linkCmds);
     } break;
     default:
       break;
@@ -561,9 +556,8 @@ std::vector<std::string> cmNinjaNormalTargetGenerator::ComputeLinkCmd(
     case cmStateEnums::EXECUTABLE:
       if (this->TargetLinkLanguage(config) == "Swift") {
         if (this->GeneratorTarget->IsExecutableWithExports()) {
-          const std::string flags =
-            this->Makefile->GetSafeDefinition("CMAKE_EXE_EXPORTS_Swift_FLAG");
-          cmExpandList(flags, linkCmds);
+          this->Makefile->GetDefExpandList("CMAKE_EXE_EXPORTS_Swift_FLAG",
+                                           linkCmds);
         }
       }
       break;
@@ -589,8 +583,6 @@ void cmNinjaNormalTargetGenerator::WriteDeviceLinkStatement(
   if (!requiresDeviceLinking) {
     return;
   }
-
-  // Now we can do device linking
 
   // First and very important step is to make sure while inside this
   // step our link language is set to CUDA
@@ -677,9 +669,9 @@ void cmNinjaNormalTargetGenerator::WriteDeviceLinkStatement(
   linkLineComputer->SetUseWatcomQuote(useWatcomQuote);
   linkLineComputer->SetUseNinjaMulti(globalGen->IsMultiConfig());
 
-  localGen.GetTargetFlags(
-    linkLineComputer.get(), config, vars["LINK_LIBRARIES"], vars["FLAGS"],
-    vars["LINK_FLAGS"], frameworkPath, linkPath, genTarget);
+  localGen.GetDeviceLinkFlags(linkLineComputer.get(), config,
+                              vars["LINK_LIBRARIES"], vars["LINK_FLAGS"],
+                              frameworkPath, linkPath, genTarget);
 
   this->addPoolNinjaVariable("JOB_POOL_LINK", genTarget, vars);
 
@@ -689,22 +681,12 @@ void cmNinjaNormalTargetGenerator::WriteDeviceLinkStatement(
 
   vars["LINK_PATH"] = frameworkPath + linkPath;
 
-  // Compute architecture specific link flags.  Yes, these go into a different
-  // variable for executables, probably due to a mistake made when duplicating
-  // code between the Makefile executable and library generators.
-  if (targetType == cmStateEnums::EXECUTABLE) {
-    std::string t = vars["FLAGS"];
-    localGen.AddArchitectureFlags(t, genTarget, cudaLinkLanguage, config);
-    vars["FLAGS"] = t;
-  } else {
-    std::string t = vars["ARCH_FLAGS"];
-    localGen.AddArchitectureFlags(t, genTarget, cudaLinkLanguage, config);
-    vars["ARCH_FLAGS"] = t;
-    t.clear();
-    localGen.AddLanguageFlagsForLinking(t, genTarget, cudaLinkLanguage,
-                                        config);
-    vars["LANGUAGE_COMPILE_FLAGS"] = t;
-  }
+  // Compute language specific link flags.
+  std::string langFlags;
+  localGen.AddLanguageFlagsForLinking(langFlags, genTarget, cudaLinkLanguage,
+                                      config);
+  vars["LANGUAGE_COMPILE_FLAGS"] = langFlags;
+
   auto const tgtNames = this->TargetNames(config);
   if (genTarget->HasSOName(config)) {
     vars["SONAME_FLAG"] =
@@ -751,8 +733,9 @@ void cmNinjaNormalTargetGenerator::WriteDeviceLinkStatement(
     static_cast<int>(cmSystemTools::CalculateCommandLineLengthLimit()) -
     globalGen->GetRuleCmdLength(this->LanguageLinkerDeviceRule(config));
 
-  build.RspFile = this->ConvertToNinjaPath(std::string("CMakeFiles/") +
-                                           genTarget->GetName() + ".rsp");
+  build.RspFile = this->ConvertToNinjaPath(
+    cmStrCat("CMakeFiles/", genTarget->GetName(),
+             globalGen->IsMultiConfig() ? cmStrCat('.', config) : "", ".rsp"));
 
   // Gather order-only dependencies.
   this->GetLocalGenerator()->AppendTargetDepends(
@@ -863,8 +846,8 @@ void cmNinjaNormalTargetGenerator::WriteLinkStatement(
     }();
 
     vars["SWIFT_MODULE_NAME"] = [gt]() -> std::string {
-      if (const char* name = gt->GetProperty("Swift_MODULE_NAME")) {
-        return name;
+      if (cmProp name = gt->GetProperty("Swift_MODULE_NAME")) {
+        return *name;
       }
       return gt->GetName();
     }();
@@ -872,15 +855,15 @@ void cmNinjaNormalTargetGenerator::WriteLinkStatement(
     vars["SWIFT_MODULE"] = [this](const std::string& module) -> std::string {
       std::string directory =
         this->GetLocalGenerator()->GetCurrentBinaryDirectory();
-      if (const char* prop = this->GetGeneratorTarget()->GetProperty(
+      if (cmProp prop = this->GetGeneratorTarget()->GetProperty(
             "Swift_MODULE_DIRECTORY")) {
-        directory = prop;
+        directory = *prop;
       }
 
       std::string name = module + ".swiftmodule";
-      if (const char* prop =
+      if (cmProp prop =
             this->GetGeneratorTarget()->GetProperty("Swift_MODULE")) {
-        name = prop;
+        name = *prop;
       }
 
       return this->GetLocalGenerator()->ConvertToOutputFormat(
@@ -1040,11 +1023,11 @@ void cmNinjaNormalTargetGenerator::WriteLinkStatement(
     std::string prefix;
     std::string base;
     std::string suffix;
-    gt->GetFullNameComponents(prefix, base, suffix);
+    gt->GetFullNameComponents(prefix, base, suffix, config);
     std::string dbg_suffix = ".dbg";
     // TODO: Where to document?
-    if (mf->GetDefinition("CMAKE_DEBUG_SYMBOL_SUFFIX")) {
-      dbg_suffix = mf->GetDefinition("CMAKE_DEBUG_SYMBOL_SUFFIX");
+    if (auto d = mf->GetDefinition("CMAKE_DEBUG_SYMBOL_SUFFIX")) {
+      dbg_suffix = d;
     }
     vars["TARGET_PDB"] = base + suffix + dbg_suffix;
   }
@@ -1172,8 +1155,9 @@ void cmNinjaNormalTargetGenerator::WriteLinkStatement(
       globalGen->GetRuleCmdLength(linkBuild.Rule);
   }
 
-  linkBuild.RspFile = this->ConvertToNinjaPath(std::string("CMakeFiles/") +
-                                               gt->GetName() + ".rsp");
+  linkBuild.RspFile = this->ConvertToNinjaPath(
+    cmStrCat("CMakeFiles/", gt->GetName(),
+             globalGen->IsMultiConfig() ? cmStrCat('.', config) : "", ".rsp"));
 
   // Gather order-only dependencies.
   this->GetLocalGenerator()->AppendTargetDepends(gt, linkBuild.OrderOnlyDeps,

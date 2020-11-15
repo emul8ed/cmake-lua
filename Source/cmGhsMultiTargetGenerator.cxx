@@ -14,11 +14,12 @@
 #include "cmGeneratedFileStream.h"
 #include "cmGeneratorTarget.h"
 #include "cmGlobalGhsMultiGenerator.h"
-#include "cmLinkLineComputer.h"
+#include "cmLinkLineComputer.h" // IWYU pragma: keep
 #include "cmLocalGenerator.h"
 #include "cmLocalGhsMultiGenerator.h"
 #include "cmMakefile.h"
 #include "cmOutputConverter.h"
+#include "cmProperty.h"
 #include "cmSourceFile.h"
 #include "cmSourceFileLocation.h"
 #include "cmSourceGroup.h"
@@ -456,9 +457,9 @@ void cmGhsMultiTargetGenerator::WriteSourceProperty(
   std::ostream& fout, const cmSourceFile* sf, std::string const& propName,
   std::string const& propFlag)
 {
-  const char* prop = sf->GetProperty(propName);
+  cmProp prop = sf->GetProperty(propName);
   if (prop) {
-    std::vector<std::string> list = cmExpandedList(prop);
+    std::vector<std::string> list = cmExpandedList(*prop);
     for (const std::string& p : list) {
       fout << "    " << propFlag << p << '\n';
     }
@@ -549,8 +550,9 @@ void cmGhsMultiTargetGenerator::WriteSources(std::ostream& fout_proj)
    */
   for (auto& sg : groupFilesList) {
     std::ostream* fout;
-    bool useProjectFile =
-      cmIsOn(this->GeneratorTarget->GetProperty("GHS_NO_SOURCE_GROUP_FILE")) ||
+    cmProp noSourceGroupFile =
+      this->GeneratorTarget->GetProperty("GHS_NO_SOURCE_GROUP_FILE");
+    bool useProjectFile = (noSourceGroupFile && cmIsOn(*noSourceGroupFile)) ||
       cmIsOn(this->Makefile->GetDefinition("CMAKE_GHS_NO_SOURCE_GROUP_FILE"));
     if (useProjectFile || sg.empty()) {
       fout = &fout_proj;
@@ -708,9 +710,9 @@ void cmGhsMultiTargetGenerator::WriteCustomCommandLine(
 void cmGhsMultiTargetGenerator::WriteObjectLangOverride(
   std::ostream& fout, const cmSourceFile* sourceFile)
 {
-  const char* rawLangProp = sourceFile->GetProperty("LANGUAGE");
+  cmProp rawLangProp = sourceFile->GetProperty("LANGUAGE");
   if (nullptr != rawLangProp) {
-    std::string sourceLangProp(rawLangProp);
+    std::string sourceLangProp(*rawLangProp);
     std::string const& extension = sourceFile->GetExtension();
     if ("CXX" == sourceLangProp && ("c" == extension || "C" == extension)) {
       fout << "    -dotciscxx\n";
@@ -720,9 +722,9 @@ void cmGhsMultiTargetGenerator::WriteObjectLangOverride(
 
 bool cmGhsMultiTargetGenerator::DetermineIfIntegrityApp()
 {
-  const char* p = this->GeneratorTarget->GetProperty("ghs_integrity_app");
+  cmProp p = this->GeneratorTarget->GetProperty("ghs_integrity_app");
   if (p) {
-    return cmIsOn(this->GeneratorTarget->GetProperty("ghs_integrity_app"));
+    return cmIsOn(*p);
   }
   std::vector<cmSourceFile*> sources;
   this->GeneratorTarget->GetSourceFiles(sources, this->ConfigName);

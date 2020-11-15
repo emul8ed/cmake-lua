@@ -15,6 +15,7 @@
 #include "cmAlgorithms.h"
 #include "cmListFileCache.h"
 #include "cmPolicies.h"
+#include "cmProperty.h"
 #include "cmStateTypes.h"
 #include "cmStringAlgorithms.h"
 #include "cmTargetLinkLibraryType.h"
@@ -27,8 +28,6 @@ class cmMessenger;
 class cmPropertyMap;
 class cmSourceFile;
 class cmTargetInternals;
-
-using cmProp = const std::string*;
 
 /** \class cmTarget
  * \brief Represent a library or executable target loaded from a makefile.
@@ -45,8 +44,14 @@ public:
     VisibilityImportedGlobally
   };
 
+  enum class PerConfig
+  {
+    Yes,
+    No
+  };
+
   cmTarget(std::string const& name, cmStateEnums::TargetType type,
-           Visibility vis, cmMakefile* mf, bool perConfig);
+           Visibility vis, cmMakefile* mf, PerConfig perConfig);
 
   cmTarget(cmTarget const&) = delete;
   cmTarget(cmTarget&&) noexcept;
@@ -174,7 +179,7 @@ public:
   //! Might return a nullptr if the property is not set or invalid
   cmProp GetProperty(const std::string& prop) const;
   //! Always returns a valid pointer
-  const char* GetSafeProperty(const std::string& prop) const;
+  std::string const& GetSafeProperty(std::string const& prop) const;
   bool GetPropertyAsBool(const std::string& prop) const;
   void CheckProperty(const std::string& prop, cmMakefile* context) const;
   cmProp GetComputedProperty(const std::string& prop, cmMessenger* messenger,

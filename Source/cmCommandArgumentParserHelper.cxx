@@ -11,6 +11,7 @@
 
 #include "cmCommandArgumentLexer.h"
 #include "cmMakefile.h"
+#include "cmProperty.h"
 #include "cmState.h"
 #include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
@@ -69,8 +70,7 @@ const char* cmCommandArgumentParserHelper::ExpandSpecialVariable(
     return "";
   }
   if (strcmp(key, "CACHE") == 0) {
-    if (const std::string* c =
-          this->Makefile->GetState()->GetInitializedCacheValue(var)) {
+    if (cmProp c = this->Makefile->GetState()->GetInitializedCacheValue(var)) {
       if (this->EscapeQuotes) {
         return this->AddString(cmEscapeQuotes(*c));
       }

@@ -17,7 +17,7 @@
 #include "cmListFileCache.h"
 #include "cmPolicies.h"
 #include "cmProperty.h"
-#include "cmPropertyDefinitionMap.h"
+#include "cmPropertyDefinition.h"
 #include "cmPropertyMap.h"
 #include "cmStatePrivate.h"
 #include "cmStateTypes.h"
@@ -27,12 +27,9 @@ struct lua_State;
 class cmCacheManager;
 class cmCommand;
 class cmGlobVerificationManager;
-class cmPropertyDefinition;
 class cmStateSnapshot;
 class cmMessenger;
 class cmExecutionStatus;
-
-using cmProp = const std::string*;
 
 class cmState
 {
@@ -99,10 +96,9 @@ public:
   std::vector<std::string> GetCacheEntryKeys() const;
   cmProp GetCacheEntryValue(std::string const& key) const;
   std::string GetSafeCacheEntryValue(std::string const& key) const;
-  const std::string* GetInitializedCacheValue(std::string const& key) const;
+  cmProp GetInitializedCacheValue(std::string const& key) const;
   cmStateEnums::CacheEntryType GetCacheEntryType(std::string const& key) const;
   void SetCacheEntryValue(std::string const& key, std::string const& value);
-  void SetCacheValue(std::string const& key, std::string const& value);
 
   void RemoveCacheEntry(std::string const& key);
 
@@ -138,9 +134,6 @@ public:
   cmPropertyDefinition const* GetPropertyDefinition(
     const std::string& name, cmProperty::ScopeType scope) const;
 
-  // Is a property defined?
-  bool IsPropertyDefined(const std::string& name,
-                         cmProperty::ScopeType scope) const;
   bool IsPropertyChained(const std::string& name,
                          cmProperty::ScopeType scope) const;
 
@@ -233,7 +226,7 @@ private:
                          cmListFileBacktrace const& bt);
 
   lua_State* LuaState = nullptr;
-  std::map<cmProperty::ScopeType, cmPropertyDefinitionMap> PropertyDefinitions;
+  cmPropertyDefinitionMap PropertyDefinitions;
   std::vector<std::string> EnabledLanguages;
   std::map<std::string, Command> BuiltinCommands;
   std::map<std::string, Command> ScriptedCommands;

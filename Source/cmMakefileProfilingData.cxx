@@ -6,11 +6,11 @@
 #include <stdexcept>
 #include <vector>
 
+#include <cm3p/json/value.h>
+#include <cm3p/json/writer.h>
+
 #include "cmsys/FStream.hxx"
 #include "cmsys/SystemInformation.hxx"
-
-#include "cm_jsoncpp_value.h"
-#include "cm_jsoncpp_writer.h"
 
 #include "cmListFileCache.h"
 #include "cmStringAlgorithms.h"
@@ -58,7 +58,7 @@ void cmMakefileProfilingData::StartEntry(const cmListFileFunction& lff,
     cmsys::SystemInformation info;
     Json::Value v;
     v["ph"] = "B";
-    v["name"] = lff.Name.Original;
+    v["name"] = lff.Name.Lower;
     v["cat"] = "cmake";
     v["ts"] = Json::Value::UInt64(
       std::chrono::duration_cast<std::chrono::microseconds>(

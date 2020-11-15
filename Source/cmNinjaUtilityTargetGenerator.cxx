@@ -17,6 +17,7 @@
 #include "cmLocalNinjaGenerator.h"
 #include "cmNinjaTypes.h"
 #include "cmOutputConverter.h"
+#include "cmProperty.h"
 #include "cmSourceFile.h"
 #include "cmStateTypes.h"
 #include "cmStringAlgorithms.h"
@@ -99,6 +100,8 @@ void cmNinjaUtilityTargetGenerator::Generate(const std::string& config)
   if (genTarget->Target->GetType() != cmStateEnums::GLOBAL_TARGET) {
     lg->AppendTargetOutputs(genTarget, gg->GetByproductsForCleanTarget(),
                             config);
+    std::copy(util_outputs.begin(), util_outputs.end(),
+              std::back_inserter(gg->GetByproductsForCleanTarget()));
   }
   lg->AppendTargetDepends(genTarget, deps, config, config);
 
@@ -110,9 +113,9 @@ void cmNinjaUtilityTargetGenerator::Generate(const std::string& config)
     std::string command =
       lg->BuildCommandLine(commands, "utility", this->GeneratorTarget);
     std::string desc;
-    const char* echoStr = genTarget->GetProperty("EchoString");
+    cmProp echoStr = genTarget->GetProperty("EchoString");
     if (echoStr) {
-      desc = echoStr;
+      desc = *echoStr;
     } else {
       desc = "Running utility command for " + this->GetTargetName();
     }
@@ -160,10 +163,5 @@ void cmNinjaUtilityTargetGenerator::Generate(const std::string& config)
   // be per-directory and have one at the top-level anyway.
   if (genTarget->GetType() != cmStateEnums::GLOBAL_TARGET) {
     gg->AddTargetAlias(this->GetTargetName(), genTarget, config);
-  } else if (gg->IsMultiConfig() && genTarget->Target->IsPerConfig()) {
-    cmNinjaBuild phonyAlias("phony");
-    gg->AppendTargetOutputs(genTarget, phonyAlias.Outputs, "");
-    phonyAlias.ExplicitDeps = phonyBuild.Outputs;
-    gg->WriteBuild(this->GetImplFileStream(config), phonyAlias);
   }
 }

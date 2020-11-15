@@ -8,7 +8,9 @@ set(CMAKE_CXX_EXTENSIONS FALSE)
 
 include(CheckIncludeFile)
 # Check if we can build support for ELF parsing.
-if(CMAKE_CXX_PLATFORM_ID MATCHES "OpenBSD")
+if(WIN32)
+  set(HAVE_ELF_H 0)
+elseif(CMAKE_CXX_PLATFORM_ID MATCHES "OpenBSD")
   CHECK_INCLUDE_FILES("stdint.h;elf_abi.h" HAVE_ELF_H)
 else()
   CHECK_INCLUDE_FILE("elf.h" HAVE_ELF_H)
@@ -384,8 +386,6 @@ set(SRCS
   cmProperty.h
   cmPropertyDefinition.cxx
   cmPropertyDefinition.h
-  cmPropertyDefinitionMap.cxx
-  cmPropertyDefinitionMap.h
   cmPropertyMap.cxx
   cmPropertyMap.h
   cmQtAutoGen.cxx
@@ -491,10 +491,10 @@ set(SRCS
   cmBuildCommand.h
   cmBuildNameCommand.cxx
   cmBuildNameCommand.h
-  cmCMakeCommand.cxx
-  cmCMakeCommand.h
   cmCMakeHostSystemInformationCommand.cxx
   cmCMakeHostSystemInformationCommand.h
+  cmCMakeLanguageCommand.cxx
+  cmCMakeLanguageCommand.h
   cmCMakeMinimumRequired.cxx
   cmCMakeMinimumRequired.h
   cmCMakePolicyCommand.cxx
@@ -699,7 +699,6 @@ set(SRCS
   cmWriteFileCommand.cxx
   cmWriteFileCommand.h
 
-  cm_static_string_view.hxx
   cm_get_date.h
   cm_get_date.c
   cm_utf8.h

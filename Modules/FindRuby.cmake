@@ -48,10 +48,21 @@ This module will set the following variables in your project:
   Ruby patch version.
 
 
-Also:
+The following variables are also provided for compatibility reasons,
+don't use them in new code:
 
-``Ruby_INCLUDE_PATH``
-  same as Ruby_INCLUDE_DIRS, only provided for compatibility reasons, don't use it
+``RUBY_EXECUTABLE``
+  same as Ruby_EXECUTABLE.
+``RUBY_INCLUDE_DIRS``
+  same as Ruby_INCLUDE_DIRS.
+``RUBY_INCLUDE_PATH``
+  same as Ruby_INCLUDE_DIRS.
+``RUBY_LIBRARY``
+  same as Ruby_LIBRARY.
+``RUBY_VERSION``
+  same as Ruby_VERSION.
+``RUBY_FOUND``
+  same as Ruby_FOUND.
 
 Hints
 ^^^^^
@@ -493,7 +504,6 @@ foreach(Camel
     Ruby_VERSION_MAJOR
     Ruby_VERSION_MINOR
     Ruby_VERSION_PATCH
-    Ruby_INCLUDE_PATH
 
     Ruby_ARCH_DIR
     Ruby_ARCH

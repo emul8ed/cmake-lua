@@ -1,5 +1,4 @@
-project(test_include_dirs)
-include(CTest)
+project(test_include_dirs LANGUAGES CXX)
 include(GoogleTest)
 
 enable_testing()
@@ -48,4 +47,10 @@ gtest_discover_tests(
   TEST_SUFFIX _with_discovery
   DISCOVERY_TIMEOUT 20
   PROPERTIES TIMEOUT 2
+)
+
+add_executable(skip_test skip_test.cpp)
+
+gtest_discover_tests(
+  skip_test
 )

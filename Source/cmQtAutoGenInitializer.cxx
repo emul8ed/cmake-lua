@@ -16,13 +16,13 @@
 #include <cm/algorithm>
 #include <cm/iterator>
 #include <cm/memory>
+#include <cmext/algorithm>
+
+#include <cm3p/json/value.h>
+#include <cm3p/json/writer.h>
 
 #include "cmsys/SystemInformation.hxx"
 
-#include "cm_jsoncpp_value.h"
-#include "cm_jsoncpp_writer.h"
-
-#include "cmAlgorithms.h"
 #include "cmCustomCommand.h"
 #include "cmCustomCommandLines.h"
 #include "cmGeneratedFileStream.h"
@@ -35,6 +35,7 @@
 #include "cmMakefile.h"
 #include "cmMessageType.h"
 #include "cmPolicies.h"
+#include "cmProperty.h"
 #include "cmQtAutoGen.h"
 #include "cmQtAutoGenGlobalInitializer.h"
 #include "cmSourceFile.h"
@@ -339,21 +340,18 @@ bool cmQtAutoGenInitializer::InitCustomTargets()
 
   // Targets FOLDER
   {
-    cmProp prop =
+    cmProp folder =
       this->Makefile->GetState()->GetGlobalProperty("AUTOMOC_TARGETS_FOLDER");
-    if (prop == nullptr) {
-      prop = this->Makefile->GetState()->GetGlobalProperty(
+    if (folder == nullptr) {
+      folder = this->Makefile->GetState()->GetGlobalProperty(
         "AUTOGEN_TARGETS_FOLDER");
     }
-    const char* folder;
     // Inherit FOLDER property from target (#13688)
-    if (prop == nullptr) {
+    if (folder == nullptr) {
       folder = this->GenTarget->GetProperty("FOLDER");
-    } else {
-      folder = prop->c_str();
     }
     if (folder != nullptr) {
-      this->TargetsFolder = folder;
+      this->TargetsFolder = *folder;
     }
   }
 
@@ -443,7 +441,8 @@ bool cmQtAutoGenInitializer::InitCustomTargets()
 
     // Autogen target parallel processing
     {
-      std::string prop = this->GenTarget->GetSafeProperty("AUTOGEN_PARALLEL");
+      std::string const& prop =
+        this->GenTarget->GetSafeProperty("AUTOGEN_PARALLEL");
       if (prop.empty() || (prop == "AUTO")) {
         // Autodetect number of CPUs
         this->AutogenTarget.Parallel = GetParallelCPUCount();
@@ -474,7 +473,7 @@ bool cmQtAutoGenInitializer::InitCustomTargets()
       this->AutogenTarget.DependOrigin =
         this->GenTarget->GetPropertyAsBool("AUTOGEN_ORIGIN_DEPENDS");
 
-      std::string const deps =
+      std::string const& deps =
         this->GenTarget->GetSafeProperty("AUTOGEN_TARGET_DEPENDS");
       if (!deps.empty()) {
         for (std::string const& depName : cmExpandedList(deps)) {
@@ -572,9 +571,8 @@ bool cmQtAutoGenInitializer::InitMoc()
   if (this->GenTarget->GetPropertyAsBool("AUTOMOC_COMPILER_PREDEFINES") &&
       (this->QtVersion >= IntegerVersion(5, 8))) {
     // Command
-    cmExpandList(this->Makefile->GetSafeDefinition(
-                   "CMAKE_CXX_COMPILER_PREDEFINES_COMMAND"),
-                 this->Moc.PredefsCmd);
+    this->Makefile->GetDefExpandList("CMAKE_CXX_COMPILER_PREDEFINES_COMMAND",
+                                     this->Moc.PredefsCmd);
     // Header
     if (!this->Moc.PredefsCmd.empty()) {
       ConfigFileNames(this->Moc.PredefsFile,
@@ -657,7 +655,7 @@ bool cmQtAutoGenInitializer::InitUic()
 {
   // Uic search paths
   {
-    std::string const usp =
+    std::string const& usp =
       this->GenTarget->GetSafeProperty("AUTOUIC_SEARCH_PATHS");
     if (!usp.empty()) {
       this->Uic.SearchPaths =
@@ -850,7 +848,7 @@ bool cmQtAutoGenInitializer::InitScanFiles()
               this->Makefile->GetSource(fullPath, locationKind);
             if (sf != nullptr) {
               // Check if we know about this header already
-              if (cmContains(this->AutogenTarget.Headers, sf)) {
+              if (cm::contains(this->AutogenTarget.Headers, sf)) {
                 continue;
               }
               // We only accept not-GENERATED files that do exist.
@@ -898,14 +896,14 @@ bool cmQtAutoGenInitializer::InitScanFiles()
         cmSystemTools::LowerCase(sf->GetExtension());
 
       if (cm->IsHeaderExtension(extLower)) {
-        if (!cmContains(this->AutogenTarget.Headers, sf.get())) {
+        if (!cm::contains(this->AutogenTarget.Headers, sf.get())) {
           auto muf = makeMUFile(sf.get(), fullPath, false);
           if (muf->SkipMoc || muf->SkipUic) {
             addMUHeader(std::move(muf), extLower);
           }
         }
       } else if (cm->IsSourceExtension(extLower)) {
-        if (!cmContains(this->AutogenTarget.Sources, sf.get())) {
+        if (!cm::contains(this->AutogenTarget.Sources, sf.get())) {
           auto muf = makeMUFile(sf.get(), fullPath, false);
           if (muf->SkipMoc || muf->SkipUic) {
             addMUSource(std::move(muf));
@@ -1097,6 +1095,7 @@ bool cmQtAutoGenInitializer::InitAutogenTarget()
   // of fiddling with the include directories
   std::vector<std::string> configs;
   this->GlobalGen->GetQtAutoGenConfigs(configs);
+  bool stdPipesUTF8 = true;
   cmCustomCommandLines commandLines;
   for (auto const& config : configs) {
     commandLines.push_back(cmMakeCommandLine(
@@ -1141,7 +1140,7 @@ bool cmQtAutoGenInitializer::InitAutogenTarget()
     const std::vector<std::string> no_deps;
     cmCustomCommand cc(no_output, autogenProvides, no_deps, commandLines,
                        this->Makefile->GetBacktrace(), autogenComment.c_str(),
-                       this->Dir.Work.c_str());
+                       this->Dir.Work.c_str(), stdPipesUTF8);
     cc.SetEscapeOldStyle(false);
     cc.SetEscapeAllowMakeVars(true);
     this->GenTarget->Target->AddPreBuildCommand(std::move(cc));
@@ -1183,11 +1182,58 @@ bool cmQtAutoGenInitializer::InitAutogenTarget()
     if (useNinjaDepfile) {
       // Create a custom command that generates a timestamp file and
       // has a depfile assigned. The depfile is created by JobDepFilesMergeT.
+      //
+      // Also create an additional '_autogen_timestamp_deps' that the custom
+      // command will depend on. It will have no sources or commands to
+      // execute, but it will have dependencies that would originally be
+      // assigned to the pre-Qt 5.15 'autogen' target. These dependencies will
+      // serve as a list of order-only dependencies for the custom command,
+      // without forcing the custom command to re-execute.
+      //
+      // The dependency tree would then look like
+      // '_autogen_timestamp_deps (order-only)' <- '/timestamp' file <-
+      // '_autogen' target.
+      const auto timestampTargetName =
+        cmStrCat(this->GenTarget->GetName(), "_autogen_timestamp_deps");
+      std::vector<std::string> timestampTargetProvides;
+      cmCustomCommandLines timestampTargetCommandLines;
 
-      // Add additional autogen target dependencies
+      // Add additional autogen target dependencies to
+      // '_autogen_timestamp_deps'.
       for (const cmTarget* t : this->AutogenTarget.DependTargets) {
         dependencies.push_back(t->GetName());
       }
+
+      cmTarget* timestampTarget = this->LocalGen->AddUtilityCommand(
+        timestampTargetName, true, this->Dir.Work.c_str(),
+        /*byproducts=*/timestampTargetProvides,
+        /*depends=*/dependencies, timestampTargetCommandLines, false, nullptr);
+      this->LocalGen->AddGeneratorTarget(
+        cm::make_unique<cmGeneratorTarget>(timestampTarget, this->LocalGen));
+
+      // Set FOLDER property on the timestamp target, so it appears in the
+      // appropriate folder in an IDE or in the file api.
+      if (!this->TargetsFolder.empty()) {
+        timestampTarget->SetProperty("FOLDER", this->TargetsFolder);
+      }
+
+      // Make '/timestamp' file depend on '_autogen_timestamp_deps' and on the
+      // moc and uic executables (whichever are enabled).
+      dependencies.clear();
+      dependencies.push_back(timestampTargetName);
+
+      if (this->Moc.ExecutableTarget != nullptr) {
+        dependencies.push_back(this->Moc.ExecutableTarget->Target->GetName());
+      } else if (!this->Moc.Executable.empty()) {
+        dependencies.push_back(this->Moc.Executable);
+      }
+      if (this->Uic.ExecutableTarget != nullptr) {
+        dependencies.push_back(this->Uic.ExecutableTarget->Target->GetName());
+      } else if (!this->Uic.Executable.empty()) {
+        dependencies.push_back(this->Uic.Executable);
+      }
+
+      // Create the custom command that outputs the timestamp file.
       const char timestampFileName[] = "timestamp";
       const std::string outputFile =
         cmStrCat(this->Dir.Build, "/", timestampFileName);
@@ -1211,7 +1257,8 @@ bool cmQtAutoGenInitializer::InitAutogenTarget()
         autogenComment.c_str(), this->Dir.Work.c_str(), /*replace=*/false,
         /*escapeOldStyle=*/false,
         /*uses_terminal=*/false,
-        /*command_expand_lists=*/false, this->AutogenTarget.DepFile);
+        /*command_expand_lists=*/false, this->AutogenTarget.DepFile, "",
+        stdPipesUTF8);
 
       // Alter variables for the autogen target which now merely wraps the
       // custom command
@@ -1282,6 +1329,7 @@ bool cmQtAutoGenInitializer::InitRccTargets()
     ccDepends.push_back(qrc.QrcFile);
     ccDepends.push_back(qrc.InfoFile);
 
+    bool stdPipesUTF8 = true;
     cmCustomCommandLines commandLines;
     if (this->MultiConfig) {
       // Build for all configurations
@@ -1310,7 +1358,8 @@ bool cmQtAutoGenInitializer::InitRccTargets()
 
         cmTarget* autoRccTarget = this->LocalGen->AddUtilityCommand(
           ccName, true, this->Dir.Work.c_str(), ccOutput, ccDepends,
-          commandLines, false, ccComment.c_str());
+          commandLines, false, ccComment.c_str(), false, false, "",
+          stdPipesUTF8);
 
         // Create autogen generator target
         this->LocalGen->AddGeneratorTarget(
@@ -1350,7 +1399,8 @@ bool cmQtAutoGenInitializer::InitRccTargets()
         this->LocalGen->AddCustomCommandToOutput(
           ccOutput, ccByproducts, ccDepends, no_main_dependency,
           no_implicit_depends, commandLines, ccComment.c_str(),
-          this->Dir.Work.c_str());
+          this->Dir.Work.c_str(), false, true, false, false, "", "",
+          stdPipesUTF8);
       }
       // Reconfigure when .qrc file changes
       this->Makefile->AddCMakeDependFile(qrc.QrcFile);
@@ -1468,6 +1518,7 @@ bool cmQtAutoGenInitializer::SetupWriteAutogenInfo()
   info.SetConfig("PARSE_CACHE_FILE", this->AutogenTarget.ParseCacheFile);
   info.Set("DEP_FILE", this->AutogenTarget.DepFile);
   info.Set("DEP_FILE_RULE_NAME", this->AutogenTarget.DepFileRuleName);
+  info.SetArray("CMAKE_LIST_FILES", this->Makefile->GetListFiles());
   info.SetArray("HEADER_EXTENSIONS",
                 this->Makefile->GetCMakeInstance()->GetHeaderExtensions());
   info.SetArrayArray(
@@ -1792,7 +1843,7 @@ bool cmQtAutoGenInitializer::GetQtExecutable(GenVarsT& genVars,
   // Custom executable
   {
     std::string const prop = cmStrCat(genVars.GenNameUpper, "_EXECUTABLE");
-    std::string const val = this->GenTarget->Target->GetSafeProperty(prop);
+    std::string const& val = this->GenTarget->Target->GetSafeProperty(prop);
     if (!val.empty()) {
       // Evaluate generator expression
       {

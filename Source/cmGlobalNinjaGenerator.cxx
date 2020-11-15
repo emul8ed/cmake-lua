@@ -12,13 +12,12 @@
 #include <cmext/algorithm>
 #include <cmext/memory>
 
+#include <cm3p/json/reader.h>
+#include <cm3p/json/value.h>
+#include <cm3p/json/writer.h>
+
 #include "cmsys/FStream.hxx"
 
-#include "cm_jsoncpp_reader.h"
-#include "cm_jsoncpp_value.h"
-#include "cm_jsoncpp_writer.h"
-
-#include "cmAlgorithms.h"
 #include "cmDocumentationEntry.h"
 #include "cmFortranParser.h"
 #include "cmGeneratedFileStream.h"
@@ -436,8 +435,6 @@ cmGlobalNinjaGenerator::cmGlobalNinjaGenerator(cmake* cm)
 #ifdef _WIN32
   cm->GetState()->SetWindowsShell(true);
 #endif
-  // // Ninja is not ported to non-Unix OS yet.
-  // this->ForceUnixPaths = true;
   this->FindMakeProgramFile = "CMakeNinjaFindMake.cmake";
 }
 
@@ -687,10 +684,10 @@ void cmGlobalNinjaGenerator::CheckNinjaFeatures()
 bool cmGlobalNinjaGenerator::CheckLanguages(
   std::vector<std::string> const& languages, cmMakefile* mf) const
 {
-  if (cmContains(languages, "Fortran")) {
+  if (cm::contains(languages, "Fortran")) {
     return this->CheckFortran(mf);
   }
-  if (cmContains(languages, "Swift")) {
+  if (cm::contains(languages, "Swift")) {
     const std::string architectures =
       mf->GetSafeDefinition("CMAKE_OSX_ARCHITECTURES");
     if (architectures.find_first_of(';') != std::string::npos) {
@@ -715,14 +712,7 @@ bool cmGlobalNinjaGenerator::CheckFortran(cmMakefile* mf) const
   e <<
     "The Ninja generator does not support Fortran using Ninja version\n"
     "  " << this->NinjaVersion << "\n"
-    "due to lack of required features.  "
-    "Kitware has implemented the required features and they have been "
-    "merged to upstream ninja for inclusion in Ninja 1.10 and higher.  "
-    "As of this version of CMake, Ninja 1.10 has not been released.  "
-    "Meanwhile, Kitware maintains a branch of Ninja at:\n"
-    "  https://github.com/Kitware/ninja/tree/features-for-fortran#readme\n"
-    "with the required features.  "
-    "One may build ninja from that branch to get support for Fortran."
+    "due to lack of required features.  Ninja 1.10 or higher is required."
     ;
   /* clang-format on */
   mf->IssueMessage(MessageType::FATAL_ERROR, e.str());
@@ -1064,10 +1054,9 @@ void cmGlobalNinjaGenerator::WriteAssumedSourceDependencies()
 }
 
 std::string cmGlobalNinjaGenerator::OrderDependsTargetForTarget(
-  cmGeneratorTarget const* target, const std::string& config)
+  cmGeneratorTarget const* target, const std::string& /*config*/) const
 {
-  return cmStrCat("cmake_object_order_depends_target_", target->GetName(), '_',
-                  cmSystemTools::UpperCase(config));
+  return cmStrCat("cmake_object_order_depends_target_", target->GetName());
 }
 
 void cmGlobalNinjaGenerator::AppendTargetOutputs(
@@ -1181,7 +1170,9 @@ void cmGlobalNinjaGenerator::AppendTargetDependsClosure(
 
     for (auto const& dep_target : this->GetTargetDirectDepends(target)) {
       if (dep_target->GetType() == cmStateEnums::INTERFACE_LIBRARY ||
-          (this->EnableCrossConfigBuild() && !dep_target.IsCross())) {
+          (target->GetType() != cmStateEnums::UTILITY &&
+           dep_target->GetType() != cmStateEnums::UTILITY &&
+           this->EnableCrossConfigBuild() && !dep_target.IsCross())) {
         continue;
       }
 
@@ -1874,6 +1865,7 @@ void cmGlobalNinjaGenerator::WriteTargetClean(std::ostream& os)
         byproducts.push_back(
           this->BuildAlias(GetByproductsForCleanTargetName(), config));
       }
+      byproducts.emplace_back(GetByproductsForCleanTargetName());
       build.Variables["TARGETS"] = cmJoin(byproducts, " ");
 
       for (auto const& fileConfig : configs) {
@@ -2687,4 +2679,11 @@ bool cmGlobalNinjaMultiGenerator::ReadCacheEntriesForBuild(
   }
 
   return true;
+}
+
+std::string cmGlobalNinjaMultiGenerator::OrderDependsTargetForTarget(
+  cmGeneratorTarget const* target, const std::string& config) const
+{
+  return cmStrCat("cmake_object_order_depends_target_", target->GetName(), '_',
+                  cmSystemTools::UpperCase(config));
 }

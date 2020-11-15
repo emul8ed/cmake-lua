@@ -10,8 +10,8 @@
 
 #include <cm/memory>
 #include <cm/string>
+#include <cmext/algorithm>
 
-#include "cmAlgorithms.h"
 #include "cmDocumentationEntry.h"
 #include "cmGeneratedFileStream.h"
 #include "cmGeneratorTarget.h"
@@ -19,6 +19,7 @@
 #include "cmLocalGenerator.h"
 #include "cmLocalGhsMultiGenerator.h"
 #include "cmMakefile.h"
+#include "cmProperty.h"
 #include "cmState.h"
 #include "cmStateTypes.h"
 #include "cmStringAlgorithms.h"
@@ -376,8 +377,8 @@ void cmGlobalGhsMultiGenerator::WriteProjectLine(
   std::ostream& fout, cmGeneratorTarget const* target, cmLocalGenerator* root,
   std::string& rootBinaryDir)
 {
-  const char* projName = target->GetProperty("GENERATOR_FILE_NAME");
-  const char* projType = target->GetProperty("GENERATOR_FILE_NAME_EXT");
+  cmProp projName = target->GetProperty("GENERATOR_FILE_NAME");
+  cmProp projType = target->GetProperty("GENERATOR_FILE_NAME_EXT");
   if (projName && projType) {
     cmLocalGenerator* lg = target->GetLocalGenerator();
     std::string dir = lg->GetCurrentBinaryDirectory();
@@ -390,9 +391,9 @@ void cmGlobalGhsMultiGenerator::WriteProjectLine(
       }
     }
 
-    std::string projFile = dir + projName + FILE_EXTENSION;
+    std::string projFile = dir + *projName + FILE_EXTENSION;
     fout << projFile;
-    fout << ' ' << projType << '\n';
+    fout << ' ' << *projType << '\n';
   } else {
     /* Should never happen */
     std::string message =
@@ -469,7 +470,8 @@ void cmGlobalGhsMultiGenerator::WriteAllTarget(
     if (t->GetType() == cmStateEnums::INTERFACE_LIBRARY) {
       continue;
     }
-    if (!cmIsOn(t->GetProperty("EXCLUDE_FROM_ALL"))) {
+    cmProp p = t->GetProperty("EXCLUDE_FROM_ALL");
+    if (!(p && cmIsOn(*p))) {
       defaultTargets.push_back(t);
     }
   }
@@ -585,14 +587,14 @@ cmGlobalGhsMultiGenerator::GenerateBuildCommand(
     /* if multiple top-projects are found in build directory
      * then prefer projectName top-project.
      */
-    if (!cmContains(files, proj)) {
+    if (!cm::contains(files, proj)) {
       proj = files.at(0);
     }
   }
 
   makeCommand.Add("-top", proj);
   if (!targetNames.empty()) {
-    if (cmContains(targetNames, "clean")) {
+    if (cm::contains(targetNames, "clean")) {
       makeCommand.Add("-clean");
     } else {
       for (const auto& tname : targetNames) {

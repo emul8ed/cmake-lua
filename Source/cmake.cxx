@@ -19,15 +19,14 @@
 #endif
 
 #include <cmext/algorithm>
+#include <cmext/string_view>
 
 #include "cmsys/FStream.hxx"
 #include "cmsys/Glob.hxx"
 #include "cmsys/RegularExpression.hxx"
 
-#include "cm_static_string_view.hxx"
 #include "cm_sys_stat.h"
 
-#include "cmAlgorithms.h"
 #include "cmCommands.h"
 #include "cmDocumentation.h"
 #include "cmDocumentationEntry.h"
@@ -58,7 +57,7 @@
 #if !defined(CMAKE_BOOTSTRAP)
 #  include <unordered_map>
 
-#  include "cm_jsoncpp_writer.h"
+#  include <cm3p/json/writer.h>
 
 #  include "cmFileAPI.h"
 #  include "cmGraphVizWriter.h"
@@ -139,6 +138,7 @@ using JsonValueMapType = std::unordered_map<std::string, Json::Value>;
 static bool cmakeCheckStampFile(const std::string& stampName);
 static bool cmakeCheckStampList(const std::string& stampList);
 
+#ifndef CMAKE_BOOTSTRAP
 static void cmWarnUnusedCliWarning(const std::string& variable, int /*unused*/,
                                    void* ctx, const char* /*unused*/,
                                    const cmMakefile* /*unused*/)
@@ -146,6 +146,7 @@ static void cmWarnUnusedCliWarning(const std::string& variable, int /*unused*/,
   cmake* cm = reinterpret_cast<cmake*>(ctx);
   cm->MarkCliAsUsed(variable);
 }
+#endif
 
 cmake::cmake(Role role, cmState::Mode mode)
   : FileTimeCache(cm::make_unique<cmFileTimeCache>())
@@ -290,7 +291,8 @@ void cmake::CleanupCommandsAndMacros()
 // Parse the args
 bool cmake::SetCacheArgs(const std::vector<std::string>& args)
 {
-  bool findPackageMode = false;
+  auto findPackageMode = false;
+  auto seenScriptOption = false;
   for (unsigned int i = 1; i < args.size(); ++i) {
     std::string const& arg = args[i];
     if (cmHasLiteralPrefix(arg, "-D")) {
@@ -314,8 +316,7 @@ bool cmake::SetCacheArgs(const std::vector<std::string>& args)
         bool haveValue = false;
         std::string cachedValue;
         if (this->WarnUnusedCli) {
-          if (const std::string* v =
-                this->State->GetInitializedCacheValue(var)) {
+          if (cmProp v = this->State->GetInitializedCacheValue(var)) {
             haveValue = true;
             cachedValue = *v;
           }
@@ -446,6 +447,11 @@ bool cmake::SetCacheArgs(const std::vector<std::string>& args)
       this->SetHomeOutputDirectory(
         cmSystemTools::GetCurrentWorkingDirectory());
       this->ReadListFile(args, path);
+      seenScriptOption = true;
+    } else if (arg == "--" && seenScriptOption) {
+      // Stop processing CMake args and avoid possible errors
+      // when arbitrary args are given to CMake script.
+      break;
     } else if (cmHasLiteralPrefix(arg, "--find-package")) {
       findPackageMode = true;
     }
@@ -642,6 +648,8 @@ void cmake::SetArgs(const std::vector<std::string>& args)
       path = cmSystemTools::CollapseFullPath(path);
       cmSystemTools::ConvertToUnixSlashes(path);
       this->SetHomeDirectory(path);
+      // XXX(clang-tidy): https://bugs.llvm.org/show_bug.cgi?id=44165
+      // NOLINTNEXTLINE(bugprone-branch-clone)
     } else if (cmHasLiteralPrefix(arg, "-O")) {
       // There is no local generate anymore.  Ignore -O option.
     } else if (cmHasLiteralPrefix(arg, "-B")) {
@@ -681,27 +689,16 @@ void cmake::SetArgs(const std::vector<std::string>& args)
       this->VSSolutionFile = args[++i];
     }
 #endif
-    else if (cmHasLiteralPrefix(arg, "-D")) {
+    else if (cmHasLiteralPrefix(arg, "-D") || cmHasLiteralPrefix(arg, "-U") ||
+             cmHasLiteralPrefix(arg, "-C")) {
       // skip for now
-      // in case '-D var=val' is given, also skip the next
-      // in case '-Dvar=val' is given, don't skip the next
+      // in case '-[DUC] argval' var' is given, also skip the next
+      // in case '-[DUC]argval' is given, don't skip the next
       if (arg.size() == 2) {
         ++i;
       }
-    } else if (cmHasLiteralPrefix(arg, "-U")) {
-      // skip for now
-      // in case '-U var' is given, also skip the next
-      // in case '-Uvar' is given, don't skip the next
-      if (arg.size() == 2) {
-        ++i;
-      }
-    } else if (cmHasLiteralPrefix(arg, "-C")) {
-      // skip for now
-      // in case '-C path' is given, also skip the next
-      // in case '-Cpath' is given, don't skip the next
-      if (arg.size() == 2) {
-        ++i;
-      }
+      // XXX(clang-tidy): https://bugs.llvm.org/show_bug.cgi?id=44165
+      // NOLINTNEXTLINE(bugprone-branch-clone)
     } else if (cmHasLiteralPrefix(arg, "-P")) {
       // skip for now
       i++;
@@ -1539,9 +1536,8 @@ int cmake::ActualConfigure()
 
   // no generator specified on the command line
   if (!this->GlobalGenerator) {
-    const std::string* genName =
-      this->State->GetInitializedCacheValue("CMAKE_GENERATOR");
-    const std::string* extraGenName =
+    cmProp genName = this->State->GetInitializedCacheValue("CMAKE_GENERATOR");
+    cmProp extraGenName =
       this->State->GetInitializedCacheValue("CMAKE_EXTRA_GENERATOR");
     if (genName) {
       std::string fullName =
@@ -1564,8 +1560,7 @@ int cmake::ActualConfigure()
     }
   }
 
-  const std::string* genName =
-    this->State->GetInitializedCacheValue("CMAKE_GENERATOR");
+  cmProp genName = this->State->GetInitializedCacheValue("CMAKE_GENERATOR");
   if (genName) {
     if (!this->GlobalGenerator->MatchesGeneratorName(*genName)) {
       std::string message =
@@ -1587,7 +1582,7 @@ int cmake::ActualConfigure()
                         cmStateEnums::INTERNAL);
   }
 
-  if (const std::string* instance =
+  if (cmProp instance =
         this->State->GetInitializedCacheValue("CMAKE_GENERATOR_INSTANCE")) {
     if (this->GeneratorInstanceSet && this->GeneratorInstance != *instance) {
       std::string message =
@@ -1604,7 +1599,7 @@ int cmake::ActualConfigure()
       "Generator instance identifier.", cmStateEnums::INTERNAL);
   }
 
-  if (const std::string* platformName =
+  if (cmProp platformName =
         this->State->GetInitializedCacheValue("CMAKE_GENERATOR_PLATFORM")) {
     if (this->GeneratorPlatformSet &&
         this->GeneratorPlatform != *platformName) {
@@ -1622,7 +1617,7 @@ int cmake::ActualConfigure()
                         "Name of generator platform.", cmStateEnums::INTERNAL);
   }
 
-  if (const std::string* tsName =
+  if (cmProp tsName =
         this->State->GetInitializedCacheValue("CMAKE_GENERATOR_TOOLSET")) {
     if (this->GeneratorToolsetSet && this->GeneratorToolset != *tsName) {
       std::string message =
@@ -1993,7 +1988,7 @@ std::string cmake::StripExtension(const std::string& file) const
 
 const char* cmake::GetCacheDefinition(const std::string& name) const
 {
-  const std::string* p = this->State->GetInitializedCacheValue(name);
+  cmProp p = this->State->GetInitializedCacheValue(name);
   return p ? p->c_str() : nullptr;
 }
 
@@ -2200,7 +2195,7 @@ void cmake::PrintGeneratorList()
 void cmake::UpdateConversionPathTable()
 {
   // Update the path conversion table with any specified file:
-  const std::string* tablepath =
+  cmProp tablepath =
     this->State->GetInitializedCacheValue("CMAKE_PATH_TRANSLATION_FILE");
 
   if (tablepath) {
@@ -2291,9 +2286,7 @@ int cmake::CheckBuildSystem()
 
   // If any byproduct of makefile generation is missing we must re-run.
   std::vector<std::string> products;
-  if (const char* productStr = mf.GetDefinition("CMAKE_MAKEFILE_PRODUCTS")) {
-    cmExpandList(productStr, products);
-  }
+  mf.GetDefExpandList("CMAKE_MAKEFILE_PRODUCTS", products);
   for (std::string const& p : products) {
     if (!(cmSystemTools::FileExists(p) || cmSystemTools::FileIsSymlink(p))) {
       if (verbose) {
@@ -2308,11 +2301,8 @@ int cmake::CheckBuildSystem()
   // Get the set of dependencies and outputs.
   std::vector<std::string> depends;
   std::vector<std::string> outputs;
-  const char* dependsStr = mf.GetDefinition("CMAKE_MAKEFILE_DEPENDS");
-  const char* outputsStr = mf.GetDefinition("CMAKE_MAKEFILE_OUTPUTS");
-  if (dependsStr && outputsStr) {
-    cmExpandList(dependsStr, depends);
-    cmExpandList(outputsStr, outputs);
+  if (mf.GetDefExpandList("CMAKE_MAKEFILE_DEPENDS", depends)) {
+    mf.GetDefExpandList("CMAKE_MAKEFILE_OUTPUTS", outputs);
   }
   if (depends.empty() || outputs.empty()) {
     // Not enough information was provided to do the test.  Just rerun.
@@ -2844,7 +2834,7 @@ bool cmake::Open(const std::string& dir, bool dryRun)
     std::cerr << "Error: could not find CMAKE_GENERATOR in Cache\n";
     return false;
   }
-  const std::string* extraGenName =
+  cmProp extraGenName =
     this->State->GetInitializedCacheValue("CMAKE_EXTRA_GENERATOR");
   std::string fullName =
     cmExternalMakefileProjectGenerator::CreateFullGeneratorName(
@@ -2872,7 +2862,7 @@ void cmake::WatchUnusedCli(const std::string& var)
 {
 #ifndef CMAKE_BOOTSTRAP
   this->VariableWatch->AddWatch(var, cmWarnUnusedCliWarning, this);
-  if (!cmContains(this->UsedCliVariables, var)) {
+  if (!cm::contains(this->UsedCliVariables, var)) {
     this->UsedCliVariables[var] = false;
   }
 #endif

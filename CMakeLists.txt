@@ -37,7 +37,7 @@ if(NOT CMake_TEST_EXTERNAL_CMAKE)
   if(CMAKE_SYSTEM_NAME STREQUAL "HP-UX")
     message(FATAL_ERROR
       "CMake no longer compiles on HP-UX.  See\n"
-      "  https://gitlab.kitware.com/cmake/cmake/issues/17137\n"
+      "  https://gitlab.kitware.com/cmake/cmake/-/issues/17137\n"
       "Use CMake 3.9 or lower instead."
       )
   endif()
@@ -337,6 +337,9 @@ endmacro()
 macro (CMAKE_BUILD_UTILITIES)
   find_package(Threads)
 
+  # Suppress unnecessary checks in third-party code.
+  include(Utilities/cmThirdPartyChecks.cmake)
+
   #---------------------------------------------------------------------
   # Create the kwsys library for CMake.
   set(KWSYS_NAMESPACE cmsys)
@@ -352,6 +355,21 @@ macro (CMAKE_BUILD_UTILITIES)
   set(KWSYS_INSTALL_DOC_DIR "${CMAKE_DOC_DIR}")
   if(CMake_NO_CXX_STANDARD)
     set(KWSYS_CXX_STANDARD "")
+  endif()
+  if(WIN32)
+    # FIXME: Teach KWSys to hard-code these checks on Windows.
+    set(KWSYS_C_HAS_CLOCK_GETTIME_MONOTONIC_COMPILED 0)
+    set(KWSYS_C_HAS_PTRDIFF_T_COMPILED 1)
+    set(KWSYS_CXX_HAS_ENVIRON_IN_STDLIB_H_COMPILED 1)
+    set(KWSYS_CXX_HAS_RLIMIT64_COMPILED 0)
+    set(KWSYS_CXX_HAS_SETENV_COMPILED 0)
+    set(KWSYS_CXX_HAS_UNSETENV_COMPILED 0)
+    set(KWSYS_CXX_HAS_UTIMENSAT_COMPILED 0)
+    set(KWSYS_CXX_HAS_UTIMES_COMPILED 0)
+    set(KWSYS_CXX_STAT_HAS_ST_MTIM_COMPILED 0)
+    set(KWSYS_CXX_STAT_HAS_ST_MTIMESPEC_COMPILED 0)
+    set(KWSYS_STL_HAS_WSTRING_COMPILED 1)
+    set(KWSYS_SYS_HAS_IFADDRS_H 0)
   endif()
   add_subdirectory(Source/kwsys)
   set(kwsys_folder "Utilities/KWSys")
@@ -376,10 +394,13 @@ macro (CMAKE_BUILD_UTILITIES)
     include_directories(SYSTEM "${CMake_SOURCE_DIR}/Utilities/std")
   endif()
 
-  include_directories(
-    ${CMake_BINARY_DIR}/Utilities
-    ${CMake_SOURCE_DIR}/Utilities
-    )
+  include_directories("${CMake_BINARY_DIR}/Utilities")
+  if ((CMAKE_SYSTEM_NAME STREQUAL "AIX" OR CMAKE_SYSTEM_NAME STREQUAL "OS400") AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # using -isystem option generate error "template with C linkage"
+    include_directories("${CMake_SOURCE_DIR}/Utilities")
+  else()
+    include_directories(SYSTEM "${CMake_SOURCE_DIR}/Utilities")
+  endif()
 
   #---------------------------------------------------------------------
   # Build CMake std library for CMake and CTest.
@@ -432,6 +453,13 @@ macro (CMAKE_BUILD_UTILITIES)
   else()
     set(CMAKE_ZLIB_INCLUDES ${CMake_SOURCE_DIR}/Utilities)
     set(CMAKE_ZLIB_LIBRARIES cmzlib)
+    set(WITHOUT_ZLIB_DLL "")
+    set(WITHOUT_ZLIB_DLL_WITH_LIB cmzlib)
+    set(ZLIB_DLL "")
+    set(ZLIB_DLL_WITH_LIB cmzlib)
+    set(ZLIB_WINAPI "")
+    set(ZLIB_WINAPI_COMPILED 0)
+    set(ZLIB_WINAPI_WITH_LIB cmzlib)
     add_subdirectory(Utilities/cmzlib)
     CMAKE_SET_TARGET_FOLDER(cmzlib "Utilities/3rdParty")
   endif()
@@ -508,6 +536,11 @@ macro (CMAKE_BUILD_UTILITIES)
       set(BZIP2_INCLUDE_DIR
         "${CMAKE_CURRENT_SOURCE_DIR}/Utilities/cmbzip2")
       set(BZIP2_LIBRARIES cmbzip2)
+      set(BZIP2_NEED_PREFIX "")
+      set(USE_BZIP2_DLL "")
+      set(USE_BZIP2_DLL_WITH_LIB cmbzip2)
+      set(USE_BZIP2_STATIC "")
+      set(USE_BZIP2_STATIC_WITH_LIB cmbzip2)
       add_subdirectory(Utilities/cmbzip2)
       CMAKE_SET_TARGET_FOLDER(cmbzip2 "Utilities/3rdParty")
     endif()
@@ -693,10 +726,15 @@ if(NOT CMake_TEST_EXTERNAL_CMAKE)
     include(${CMake_SOURCE_DIR}/Tests/CMakeInstall.cmake)
   endif()
 
-  # no clue why we are testing for this here
-  include(CheckSymbolExists)
-  CHECK_SYMBOL_EXISTS(unsetenv "stdlib.h" HAVE_UNSETENV)
-  CHECK_SYMBOL_EXISTS(environ "stdlib.h" HAVE_ENVIRON_NOT_REQUIRE_PROTOTYPE)
+  # Checks for cmSystemTools.
+  if(WIN32)
+    set(HAVE_UNSETENV 0)
+    set(HAVE_ENVIRON_NOT_REQUIRE_PROTOTYPE 1)
+  else()
+    include(CheckSymbolExists)
+    CHECK_SYMBOL_EXISTS(unsetenv "stdlib.h" HAVE_UNSETENV)
+    CHECK_SYMBOL_EXISTS(environ "stdlib.h" HAVE_ENVIRON_NOT_REQUIRE_PROTOTYPE)
+  endif()
 endif()
 
 # CMAKE_TESTS_CDASH_SERVER: CDash server used by CMake/Tests.
@@ -826,7 +864,7 @@ if(NOT CMake_TEST_EXTERNAL_CMAKE)
     PATTERN "*.sh*" PERMISSIONS OWNER_READ OWNER_EXECUTE OWNER_WRITE
                                 GROUP_READ GROUP_EXECUTE
                                 WORLD_READ WORLD_EXECUTE
-    PATTERN "ExportImportList"
+    REGEX "/(ExportImportList|cpp)$"
       PERMISSIONS OWNER_READ OWNER_EXECUTE OWNER_WRITE
                   GROUP_READ GROUP_EXECUTE
                   WORLD_READ WORLD_EXECUTE

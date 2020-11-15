@@ -7,7 +7,7 @@
 #include "cmsys/FStream.hxx"
 
 #include "cmFileTime.h"
-#include "cmLocalGenerator.h"
+#include "cmLocalUnixMakefileGenerator3.h"
 #include "cmMakefile.h"
 #include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
@@ -22,8 +22,9 @@
 
 cmDependsC::cmDependsC() = default;
 
-cmDependsC::cmDependsC(cmLocalGenerator* lg, const std::string& targetDir,
-                       const std::string& lang, const DependencyMap* validDeps)
+cmDependsC::cmDependsC(cmLocalUnixMakefileGenerator3* lg,
+                       const std::string& targetDir, const std::string& lang,
+                       const DependencyMap* validDeps)
   : cmDepends(lg, targetDir)
   , ValidDeps(validDeps)
 {
@@ -211,12 +212,12 @@ bool cmDependsC::WriteDependencies(const std::set<std::string>& sources,
   // written by the original local generator for this directory
   // convert the dependencies to paths relative to the home output
   // directory.  We must do the same here.
-  std::string obj_m = cmSystemTools::ConvertToOutputPath(obj_i);
+  std::string obj_m = this->LocalGenerator->ConvertToMakefilePath(obj_i);
   internalDepends << obj_i << '\n';
 
   for (std::string const& dep : dependencies) {
     makeDepends << obj_m << ": "
-                << cmSystemTools::ConvertToOutputPath(
+                << this->LocalGenerator->ConvertToMakefilePath(
                      this->LocalGenerator->MaybeConvertToRelativePath(binDir,
                                                                       dep))
                 << '\n';
@@ -383,9 +384,7 @@ void cmDependsC::SetupTransforms()
   // Get the transformation rules.
   std::vector<std::string> transformRules;
   cmMakefile* mf = this->LocalGenerator->GetMakefile();
-  if (const char* xform = mf->GetDefinition("CMAKE_INCLUDE_TRANSFORMS")) {
-    cmExpandList(xform, transformRules, true);
-  }
+  mf->GetDefExpandList("CMAKE_INCLUDE_TRANSFORMS", transformRules, true);
   for (std::string const& tr : transformRules) {
     this->ParseTransform(tr);
   }

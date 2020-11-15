@@ -24,6 +24,7 @@
 #include "cmMakefile.h"
 #include "cmMessageType.h"
 #include "cmPolicies.h"
+#include "cmProperty.h"
 #include "cmRange.h"
 #include "cmSearchPath.h"
 #include "cmState.h"
@@ -279,9 +280,13 @@ bool cmFindPackageCommand::InitialPass(std::vector<std::string> const& args)
     } else if (args[i] == "MODULE") {
       moduleArgs.insert(i);
       doing = DoingNone;
+      // XXX(clang-tidy): https://bugs.llvm.org/show_bug.cgi?id=44165
+      // NOLINTNEXTLINE(bugprone-branch-clone)
     } else if (args[i] == "CONFIG") {
       configArgs.insert(i);
       doing = DoingNone;
+      // XXX(clang-tidy): https://bugs.llvm.org/show_bug.cgi?id=44165
+      // NOLINTNEXTLINE(bugprone-branch-clone)
     } else if (args[i] == "NO_MODULE") {
       configArgs.insert(i);
       doing = DoingNone;
@@ -318,6 +323,8 @@ bool cmFindPackageCommand::InitialPass(std::vector<std::string> const& args)
       this->NoSystemRegistry = true;
       configArgs.insert(i);
       doing = DoingNone;
+      // XXX(clang-tidy): https://bugs.llvm.org/show_bug.cgi?id=44165
+      // NOLINTNEXTLINE(bugprone-branch-clone)
     } else if (args[i] == "NO_CMAKE_BUILDS_PATH") {
       // Ignore legacy option.
       configArgs.insert(i);
@@ -498,9 +505,7 @@ bool cmFindPackageCommand::InitialPass(std::vector<std::string> const& args)
       case cmPolicies::NEW: {
         // NEW behavior is to honor the <pkg>_ROOT variables.
         std::string const rootVar = this->Name + "_ROOT";
-        if (const char* pkgRoot = this->Makefile->GetDefinition(rootVar)) {
-          cmExpandList(pkgRoot, rootPaths, false);
-        }
+        this->Makefile->GetDefExpandList(rootVar, rootPaths, false);
         cmSystemTools::GetPath(rootPaths, rootVar.c_str());
       } break;
     }

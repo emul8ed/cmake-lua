@@ -108,6 +108,9 @@ These are:
   * ``cm::append``:
     Append elements to a sequential container.
 
+  * ``cm::contains``:
+    Checks if element or key is contained in container.
+
 * ``<cmext/iterator>``:
 
   * ``cm::is_terator``:
@@ -117,12 +120,12 @@ These are:
     Checks if a type is an input iterator type.
 
   * ``cm::is_range``:
-    Checks if a type is a range type: must have methods ``begin()`` and
-    ``end()`` returning an iterator.
+    Checks if a type is a range type: functions ``std::begin()`` and
+    ``std::end()`` apply.
 
   * ``cm::is_input_range``:
-    Checks if a type is an input range type: must have methods ``begin()`` and
-    ``end()`` returning an input iterator.
+    Checks if a type is an input range type: functions ``std::begin()`` and
+    ``std::end()`` apply and return an input iterator.
 
 * ``<cmext/memory>``:
 
@@ -159,6 +162,18 @@ smart pointer such as ``std::unique_ptr`` or ``std::shared_ptr``.
 It is allowed to pass raw pointers between objects to enable objects sharing.
 A raw pointer **must** not be deleted. Only the object(s) owning the smart
 pointer are allowed to delete dynamically allocated memory.
+
+Third Parties
+=============
+
+To build CMake, some third parties are needed. Under ``Utilities``
+directory, are versions of these third parties which can be used as an
+alternate to the ones provided by the system.
+
+To enable the selection of the third parties between the system and CMake ones,
+in CMake sources, third parties headers must be prefixed by ``cm3p/``
+(for example: ``<cm3p/json/reader.h>``). These wrappers are located under
+``Utilities/cm3p`` directory.
 
 Source Tree Layout
 ==================
@@ -204,6 +219,9 @@ The CMake source tree is organized as follows.
 
   * ``Utilities/std/cmext``:
     Extensions to the C++ STL.
+
+  * ``Utilities/cm3p``:
+    Public headers for third parties needed to build CMake.
 
   * ``Utilities/Sphinx/``:
     Sphinx configuration to build CMake user documentation.

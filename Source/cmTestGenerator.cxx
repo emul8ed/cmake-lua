@@ -12,6 +12,7 @@
 #include "cmListFileCache.h"
 #include "cmLocalGenerator.h"
 #include "cmOutputConverter.h"
+#include "cmProperty.h"
 #include "cmPropertyMap.h"
 #include "cmRange.h"
 #include "cmStateTypes.h"
@@ -100,9 +101,9 @@ void cmTestGenerator::GenerateScriptForConfig(std::ostream& os,
     exe = target->GetFullPath(config);
 
     // Prepend with the emulator when cross compiling if required.
-    const char* emulator = target->GetProperty("CROSSCOMPILING_EMULATOR");
-    if (emulator != nullptr && *emulator) {
-      std::vector<std::string> emulatorWithArgs = cmExpandedList(emulator);
+    cmProp emulator = target->GetProperty("CROSSCOMPILING_EMULATOR");
+    if (emulator != nullptr && !emulator->empty()) {
+      std::vector<std::string> emulatorWithArgs = cmExpandedList(*emulator);
       std::string emulatorExe(emulatorWithArgs[0]);
       cmSystemTools::ConvertToUnixSlashes(emulatorExe);
       os << cmOutputConverter::EscapeForCMake(emulatorExe) << " ";

@@ -14,7 +14,7 @@
 
 #include <cmext/algorithm>
 
-#include "cm_uv.h"
+#include <cm3p/uv.h>
 
 #include "cmDuration.h"
 #include "cmProcessOutput.h"
@@ -22,7 +22,8 @@
 #include "cmStringAlgorithms.h"
 
 #if !defined(CMAKE_BOOTSTRAP)
-#  include "cm_libarchive.h"
+#  include <cm3p/archive.h>
+#  include <cm3p/archive_entry.h>
 
 #  include "cmArchiveWrite.h"
 #  include "cmLocale.h"
@@ -822,7 +823,9 @@ void cmSystemTools::InitializeLibUV()
   // Perform libuv one-time initialization now, and then un-do its
   // global _fmode setting so that using libuv does not change the
   // default file text/binary mode.  See libuv issue 840.
-  uv_loop_close(uv_default_loop());
+  if (uv_loop_t* loop = uv_default_loop()) {
+    uv_loop_close(loop);
+  }
 #  ifdef _MSC_VER
   _set_fmode(_O_TEXT);
 #  else
@@ -2077,6 +2080,12 @@ std::string const& cmSystemTools::GetCMClDepsCommand()
 std::string const& cmSystemTools::GetCMakeRoot()
 {
   return cmSystemToolsCMakeRoot;
+}
+
+std::string cmSystemTools::GetCurrentWorkingDirectory()
+{
+  return cmSystemTools::CollapseFullPath(
+    cmsys::SystemTools::GetCurrentWorkingDirectory());
 }
 
 void cmSystemTools::MakefileColorEcho(int color, const char* message,

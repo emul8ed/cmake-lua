@@ -8,10 +8,9 @@
 #include <utility>
 
 #include <cm/memory>
+#include <cmext/string_view>
 
 #include "cmsys/Glob.hxx"
-
-#include "cm_static_string_view.hxx"
 
 #include "cmArgumentParser.h"
 #include "cmExecutionStatus.h"
@@ -29,6 +28,7 @@
 #include "cmMakefile.h"
 #include "cmMessageType.h"
 #include "cmPolicies.h"
+#include "cmProperty.h"
 #include "cmStateTypes.h"
 #include "cmStringAlgorithms.h"
 #include "cmSubcommandTable.h"
@@ -661,7 +661,6 @@ bool HandleTargetsMode(std::vector<std::string> const& args,
         // Nothing to do. An INTERFACE_LIBRARY can be installed, but the
         // only effect of that is to make it exportable. It installs no
         // other files itself.
-        break;
       default:
         // This should never happen due to the above type check.
         // Ignore the case.

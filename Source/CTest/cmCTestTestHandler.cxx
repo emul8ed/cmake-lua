@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cstddef>
+#include <cstddef> // IWYU pragma: keep
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -19,16 +19,16 @@
 
 #include <cm/memory>
 #include <cm/string_view>
+#include <cmext/algorithm>
+#include <cmext/string_view>
 
 #include "cmsys/FStream.hxx"
 #include <cmsys/Base64.h>
 #include <cmsys/Directory.hxx>
 #include <cmsys/RegularExpression.hxx>
 
-#include "cm_static_string_view.hxx"
 #include "cm_utf8.h"
 
-#include "cmAlgorithms.h"
 #include "cmCTest.h"
 #include "cmCTestMultiProcessHandler.h"
 #include "cmCTestResourceGroupsLexerHelper.h"
@@ -514,6 +514,10 @@ bool cmCTestTestHandler::ProcessOptions()
     this->CTest->SetParallelLevel(atoi(this->GetOption("ParallelLevel")));
   }
 
+  if (this->GetOption("StopOnFailure")) {
+    this->CTest->SetStopOnFailure(true);
+  }
+
   const char* val;
   val = this->GetOption("LabelRegularExpression");
   if (val) {
@@ -711,7 +715,7 @@ void cmCTestTestHandler::PrintLabelOrSubprojectSummary(bool doSubProject)
     cmCTestTestProperties& p = *result.Properties;
     for (std::string const& l : p.Labels) {
       // only use labels found in labels
-      if (cmContains(labels, l)) {
+      if (cm::contains(labels, l)) {
         labelTimes[l] +=
           result.ExecutionTime.count() * result.Properties->Processors;
         ++labelCounts[l];
@@ -853,14 +857,15 @@ void cmCTestTestHandler::ComputeTestList()
 
     if (this->UseUnion) {
       // if it is not in the list and not in the regexp then skip
-      if ((!this->TestsToRun.empty() && !cmContains(this->TestsToRun, cnt)) &&
+      if ((!this->TestsToRun.empty() &&
+           !cm::contains(this->TestsToRun, cnt)) &&
           !tp.IsInBasedOnREOptions) {
         continue;
       }
     } else {
       // is this test in the list of tests to run? If not then skip it
       if ((!this->TestsToRun.empty() &&
-           !cmContains(this->TestsToRun, inREcnt)) ||
+           !cm::contains(this->TestsToRun, inREcnt)) ||
           !tp.IsInBasedOnREOptions) {
         continue;
       }
@@ -889,7 +894,7 @@ void cmCTestTestHandler::ComputeTestListForRerunFailed()
     cnt++;
 
     // if this test is not in our list of tests to run, then skip it.
-    if (!this->TestsToRun.empty() && !cmContains(this->TestsToRun, cnt)) {
+    if (!this->TestsToRun.empty() && !cm::contains(this->TestsToRun, cnt)) {
       continue;
     }
 
@@ -1008,7 +1013,7 @@ void cmCTestTestHandler::UpdateForFixtures(ListOfTests& tests) const
       for (auto sIt = setupRange.first; sIt != setupRange.second; ++sIt) {
         const std::string& setupTestName = sIt->second->Name;
         tests[i].RequireSuccessDepends.insert(setupTestName);
-        if (!cmContains(tests[i].Depends, setupTestName)) {
+        if (!cm::contains(tests[i].Depends, setupTestName)) {
           tests[i].Depends.push_back(setupTestName);
         }
       }
@@ -1112,7 +1117,7 @@ void cmCTestTestHandler::UpdateForFixtures(ListOfTests& tests) const
         const std::vector<size_t>& indices = cIt->second;
         for (size_t index : indices) {
           const std::string& reqTestName = tests[index].Name;
-          if (!cmContains(p.Depends, reqTestName)) {
+          if (!cm::contains(p.Depends, reqTestName)) {
             p.Depends.push_back(reqTestName);
           }
         }
@@ -1125,7 +1130,7 @@ void cmCTestTestHandler::UpdateForFixtures(ListOfTests& tests) const
         const std::vector<size_t>& indices = cIt->second;
         for (size_t index : indices) {
           const std::string& setupTestName = tests[index].Name;
-          if (!cmContains(p.Depends, setupTestName)) {
+          if (!cm::contains(p.Depends, setupTestName)) {
             p.Depends.push_back(setupTestName);
           }
         }
@@ -1426,6 +1431,12 @@ void cmCTestTestHandler::GenerateDartOutput(cmXMLWriter& xml)
     xml.Attribute("type", "text/string");
     xml.Attribute("name", "Command Line");
     xml.Element("Value", result.FullCommandLine);
+    xml.EndElement(); // NamedMeasurement
+
+    xml.StartElement("NamedMeasurement");
+    xml.Attribute("type", "text/string");
+    xml.Attribute("name", "Environment");
+    xml.Element("Value", result.Environment);
     xml.EndElement(); // NamedMeasurement
     for (auto const& measure : result.Properties->Measurements) {
       xml.StartElement("NamedMeasurement");
@@ -2402,10 +2413,9 @@ bool cmCTestTestHandler::AddTest(const std::vector<std::string>& args)
   test.SkipReturnCode = -1;
   test.PreviousRuns = 0;
   if (this->UseIncludeRegExpFlag &&
-      !this->IncludeTestsRegularExpression.find(testname)) {
-    test.IsInBasedOnREOptions = false;
-  } else if (this->UseExcludeRegExpFlag && !this->UseExcludeRegExpFirst &&
-             this->ExcludeTestsRegularExpression.find(testname)) {
+      (!this->IncludeTestsRegularExpression.find(testname) ||
+       (!this->UseExcludeRegExpFirst &&
+        this->ExcludeTestsRegularExpression.find(testname)))) {
     test.IsInBasedOnREOptions = false;
   }
   this->TestList.push_back(test);

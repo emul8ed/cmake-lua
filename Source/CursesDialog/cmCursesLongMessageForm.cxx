@@ -41,7 +41,8 @@ void cmCursesLongMessageForm::UpdateContent(std::string const& output,
   this->Title = title;
 
   if (!output.empty() && this->Messages.size() < MAX_CONTENT_SIZE) {
-    this->Messages.append("\n" + output);
+    this->Messages.push_back('\n');
+    this->Messages.append(output);
     form_driver(this->Form, REQ_NEW_LINE);
     this->DrawMessage(output.c_str());
   }
@@ -67,7 +68,7 @@ void cmCursesLongMessageForm::UpdateStatusBar()
     bar[i] = ' ';
   }
   int width;
-  if (x < cmCursesMainForm::MAX_WIDTH) {
+  if (x >= 0 && x < cmCursesMainForm::MAX_WIDTH) {
     width = x;
   } else {
     width = cmCursesMainForm::MAX_WIDTH - 1;

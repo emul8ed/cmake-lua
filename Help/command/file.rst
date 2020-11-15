@@ -42,9 +42,9 @@ Synopsis
   `Locking`_
     file(`LOCK`_ <path> [...])
 
-   `Archiving`_
-     file(`ARCHIVE_CREATE`_ OUTPUT <archive> FILES <files> [...])
-     file(`ARCHIVE_EXTRACT`_ INPUT <archive> DESTINATION <dir> [...])
+  `Archiving`_
+    file(`ARCHIVE_CREATE`_ OUTPUT <archive> PATHS <paths>... [...])
+    file(`ARCHIVE_EXTRACT`_ INPUT <archive> [...])
 
 Reading
 ^^^^^^^
@@ -250,8 +250,8 @@ be resolved. See below for a full description of how they work.
   List of post-exclude regexes through which to filter the names of resolved
   dependencies.
 
-These arguments can be used to blacklist unwanted system libraries when
-resolving the dependencies, or to whitelist libraries from a specific
+These arguments can be used to exclude unwanted system libraries when
+resolving the dependencies, or to include libraries from a specific
 directory. The filtering works as follows:
 
 1. If the not-yet-resolved dependency matches any of the
@@ -508,8 +508,7 @@ The arguments are:
 
 ``OUTPUT <output-file>``
   Specify the output file name to generate. A relative path is treated with
-  respect to the value of :variable:`CMAKE_CURRENT_BINARY_DIR`. See policy
-  :policy:`CMP0070`.
+  respect to the value of :variable:`CMAKE_CURRENT_BINARY_DIR`.
   ``<output-file>`` does not support generator expressions.
 
 ``CONTENT <content>``
@@ -900,31 +899,33 @@ Archiving
 .. code-block:: cmake
 
   file(ARCHIVE_CREATE OUTPUT <archive>
-    [FILES <files>]
-    [DIRECTORY <dirs>]
+    PATHS <paths>...
     [FORMAT <format>]
-    [TYPE <type>]
+    [COMPRESSION <compression>]
     [MTIME <mtime>]
     [VERBOSE])
 
-Creates an archive specifed by ``OUTPUT`` with the content of ``FILES`` and
-``DIRECTORY``.
+Creates the specified ``<archive>`` file with the files and directories
+listed in ``<paths>``.  Note that ``<paths>`` must list actual files or
+directories, wildcards are not supported.
 
-To specify the format of the archive set the ``FORMAT`` option.
-Supported formats are: ``7zip``, ``gnutar``, ``pax``, ``paxr``, ``raw``,
-(restricted pax, default), and ``zip``.
+Use the ``FORMAT`` option to specify the archive format.  Supported values
+for ``<format>`` are ``7zip``, ``gnutar``, ``pax``, ``paxr``, ``raw`` and
+``zip``.  If ``FORMAT`` is not given, the default format is ``paxr``.
 
-To specify the type of compression set the ``TYPE`` option.
-Supported compression types are: ``None``, ``BZip2``, ``GZip``, ``XZ``,
-and ``Zstd``.
+Some archive formats allow the type of compression to be specified.
+The ``7zip`` and ``zip`` archive formats already imply a specific type of
+compression.  The other formats use no compression by default, but can be
+directed to do so with the ``COMPRESSION`` option.  Valid values for
+``<compression>`` are ``None``, ``BZip2``, ``GZip``, ``XZ``, and ``Zstd``.
 
 .. note::
   With ``FORMAT`` set to ``raw`` only one file will be compressed with the
-  compression type specified by ``TYPE``.
+  compression type specified by ``COMPRESSION``.
 
-With ``VERBOSE`` the command will produce verbose output.
+The ``VERBOSE`` option enables verbose output for the archive operation.
 
-To specify the modification time recorded in tarball entries use
+To specify the modification time recorded in tarball entries, use
 the ``MTIME`` option.
 
 .. _ARCHIVE_EXTRACT:
@@ -932,21 +933,23 @@ the ``MTIME`` option.
 .. code-block:: cmake
 
   file(ARCHIVE_EXTRACT INPUT <archive>
-    [FILES <files>]
-    [DIRECTORY <dirs>]
     [DESTINATION <dir>]
+    [PATTERNS <patterns>...]
     [LIST_ONLY]
     [VERBOSE])
 
-Extracts or lists the content of an archive specified by ``INPUT``.
+Extracts or lists the content of the specified ``<archive>``.
 
-The directory where the content of the archive will be extracted can
-be specified via ``DESTINATION``. If the directory does not exit, it
-will be created.
+The directory where the content of the archive will be extracted to can
+be specified using the ``DESTINATION`` option.  If the directory does not
+exist, it will be created.  If ``DESTINATION`` is not given, the current
+binary directory will be used.
 
-To select which files and directories will be extracted or listed
-use  ``FILES`` and ``DIRECTORY`` options.
+If required, you may select which files and directories to list or extract
+from the archive using the specified ``<patterns>``.  Wildcards are supported.
+If the ``PATTERNS`` option is not given, the entire archive will be listed or
+extracted.
 
-``LIST_ONLY`` will only list the files in the archive.
+``LIST_ONLY`` will list the files in the archive rather than extract them.
 
-With ``VERBOSE`` the command will produce verbose output.
+With ``VERBOSE``, the command will produce verbose output.

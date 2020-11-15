@@ -249,9 +249,14 @@ void cmMakefileLibraryTargetGenerator::WriteDeviceLibraryRules(
   std::vector<std::string> depends;
   this->AppendLinkDepends(depends, linkLanguage);
 
+  // Add language-specific flags.
+  std::string langFlags;
+  this->LocalGenerator->AddLanguageFlagsForLinking(
+    langFlags, this->GeneratorTarget, linkLanguage, this->GetConfigName());
+
   // Create set of linking flags.
   std::string linkFlags;
-  this->GetTargetLinkFlags(linkFlags, linkLanguage);
+  this->GetDeviceLinkFlags(linkFlags, linkLanguage);
 
   // Get the name of the device object to generate.
   std::string const targetOutputReal =
@@ -344,15 +349,9 @@ void cmMakefileLibraryTargetGenerator::WriteDeviceLibraryRules(
     vars.Target = target.c_str();
     vars.LinkLibraries = linkLibs.c_str();
     vars.ObjectsQuoted = buildObjs.c_str();
+    vars.LanguageCompileFlags = langFlags.c_str();
     vars.LinkFlags = linkFlags.c_str();
     vars.TargetCompilePDB = targetOutPathCompilePDB.c_str();
-
-    // Add language-specific flags.
-    std::string langFlags;
-    this->LocalGenerator->AddLanguageFlagsForLinking(
-      langFlags, this->GeneratorTarget, linkLanguage, this->GetConfigName());
-
-    vars.LanguageCompileFlags = langFlags.c_str();
 
     std::string launcher;
     const char* val = this->LocalGenerator->GetRuleLauncher(
@@ -643,27 +642,21 @@ void cmMakefileLibraryTargetGenerator::WriteLibraryRules(
     arCreateVar = this->GeneratorTarget->GetFeatureSpecificLinkRuleVariable(
       arCreateVar, linkLanguage, this->GetConfigName());
 
-    if (const char* rule = this->Makefile->GetDefinition(arCreateVar)) {
-      cmExpandList(rule, archiveCreateCommands);
-    }
+    this->Makefile->GetDefExpandList(arCreateVar, archiveCreateCommands);
     std::string arAppendVar =
       cmStrCat("CMAKE_", linkLanguage, "_ARCHIVE_APPEND");
 
     arAppendVar = this->GeneratorTarget->GetFeatureSpecificLinkRuleVariable(
       arAppendVar, linkLanguage, this->GetConfigName());
 
-    if (const char* rule = this->Makefile->GetDefinition(arAppendVar)) {
-      cmExpandList(rule, archiveAppendCommands);
-    }
+    this->Makefile->GetDefExpandList(arAppendVar, archiveAppendCommands);
     std::string arFinishVar =
       cmStrCat("CMAKE_", linkLanguage, "_ARCHIVE_FINISH");
 
     arFinishVar = this->GeneratorTarget->GetFeatureSpecificLinkRuleVariable(
       arFinishVar, linkLanguage, this->GetConfigName());
 
-    if (const char* rule = this->Makefile->GetDefinition(arFinishVar)) {
-      cmExpandList(rule, archiveFinishCommands);
-    }
+    this->Makefile->GetDefExpandList(arFinishVar, archiveFinishCommands);
   }
 
   // Decide whether to use archiving rules.

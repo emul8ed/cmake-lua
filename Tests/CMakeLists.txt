@@ -349,7 +349,6 @@ if(BUILD_TESTING)
   # add a bunch of standard build-and-test style tests
   ADD_TEST_MACRO(CommandLineTest CommandLineTest)
   ADD_TEST_MACRO(FindPackageTest FindPackageTest)
-  ADD_TEST_MACRO(FindModulesExecuteAll FindModulesExecuteAll)
   ADD_TEST_MACRO(StringFileTest StringFileTest)
   ADD_TEST_MACRO(TryCompile TryCompile)
   ADD_TEST_MACRO(SystemInformation SystemInformation)
@@ -363,7 +362,10 @@ if(BUILD_TESTING)
       add_test_macro(VSResourceNinjaForceRSP VSResourceNinjaForceRSP)
     endif ()
   endif()
-  ADD_TEST_MACRO(MSManifest MSManifest)
+  if(_isMultiConfig)
+    set(MSManifest_CTEST_OPTIONS -C $<CONFIGURATION>)
+  endif()
+  ADD_TEST_MACRO(MSManifest ${CMAKE_CTEST_COMMAND} -V -C $<CONFIGURATION>)
   ADD_TEST_MACRO(Simple Simple)
   ADD_TEST_MACRO(PreOrder PreOrder)
   ADD_TEST_MACRO(MissingSourceFile MissingSourceFile)
@@ -447,6 +449,8 @@ if(BUILD_TESTING)
                                  -DCMake_TEST_CUDA:BOOL=${CMake_TEST_CUDA}
                                  )
   ADD_TEST_MACRO(ExportImport ExportImport)
+  set_property(TEST ExportImport APPEND
+    PROPERTY LABELS "CUDA")
   ADD_TEST_MACRO(Unset Unset)
   ADD_TEST_MACRO(PolicyScope PolicyScope)
   ADD_TEST_MACRO(EmptyLibrary EmptyLibrary)
@@ -787,13 +791,8 @@ ${CMake_SOURCE_DIR}/Utilities/Release/push.bash --dir dev -- '${CMake_BUILD_NIGH
     endif()
   endmacro()
   if(CMake_BUILD_NIGHTLY_RELEASES)
-    ADD_NIGHTLY_BUILD_TEST(CMakeNightlyWin32
-      win32_release.cmake)
-    ADD_NIGHTLY_BUILD_TEST(CMakeNightlyWin64
-      win64_release.cmake)
     ADD_NIGHTLY_BUILD_TEST(CMakeNightlyOSX
       osx_release.cmake)
-    set_property(TEST CMakeNightlyWin64 PROPERTY DEPENDS CMakeNightlyWin32)
   endif()
 
   # add tests with more complex invocations
@@ -980,6 +979,7 @@ ${CMake_SOURCE_DIR}/Utilities/Release/push.bash --dir dev -- '${CMake_BUILD_NIGH
         --build-options
         --test-command ${CMAKE_CMAKE_COMMAND}
           "-DCPackWiXGenerator_BINARY_DIR:PATH=${CMake_BINARY_DIR}/Tests/CPackWiXGenerator"
+          "-Dno_verify:BOOL=${CMake_TEST_WIX_NO_VERIFY}"
           "-Dconfig=\${CTEST_CONFIGURATION_TYPE}"
           -P "${CMake_SOURCE_DIR}/Tests/CPackWiXGenerator/RunCPackVerifyResult.cmake")
 
@@ -1411,6 +1411,7 @@ ${CMake_SOURCE_DIR}/Utilities/Release/push.bash --dir dev -- '${CMake_BUILD_NIGH
   foreach(_mod IN ITEMS
             ALSA
             Boost
+            BLAS
             BZip2
             CURL
             Cups
@@ -1430,12 +1431,14 @@ ${CMake_SOURCE_DIR}/Utilities/Release/push.bash --dir dev -- '${CMake_BUILD_NIGH
             ICU
             JPEG
             JsonCpp
+            LAPACK
             LibArchive
             LibLZMA
             LibRHash
             Libinput
             LibUV
             LibXml2
+            LibXslt
             LTTngUST
             ODBC
             OpenACC
@@ -1470,7 +1473,8 @@ ${CMake_SOURCE_DIR}/Utilities/Release/push.bash --dir dev -- '${CMake_BUILD_NIGH
     add_subdirectory(GoogleTest)
   endif()
 
-  if(CMake_TEST_FindPython OR CMake_TEST_FindPython_NumPy OR CMake_TEST_FindPython_Conda)
+  if(CMake_TEST_FindPython OR CMake_TEST_FindPython_NumPy
+      OR CMake_TEST_FindPython_Conda OR CMake_TEST_FindPython_IronPython OR CMake_TEST_FindPython_PyPy)
     add_subdirectory(FindPython)
   endif()
 
@@ -1893,6 +1897,8 @@ ${CMake_SOURCE_DIR}/Utilities/Release/push.bash --dir dev -- '${CMake_BUILD_NIGH
     endif()
     set(MSVCRuntimeLibrary_BUILD_OPTIONS -DCMake_TEST_CUDA=${CMake_TEST_CUDA})
     ADD_TEST_MACRO(MSVCRuntimeLibrary)
+    set_property(TEST MSVCRuntimeLibrary APPEND
+      PROPERTY LABELS "CUDA")
     if(CMAKE_Fortran_COMPILER)
       ADD_TEST_MACRO(MSVCRuntimeLibrary.Fortran)
     endif()
@@ -2688,9 +2694,6 @@ ${CMake_SOURCE_DIR}/Utilities/Release/push.bash --dir dev -- '${CMake_BUILD_NIGH
     -S "${CMake_BINARY_DIR}/Tests/CTestCoverageCollectGCOV/test.cmake" -VV
     --output-log "${CMake_BINARY_DIR}/Tests/CTestCoverageCollectGCOV/testOut.log"
     )
-  set_tests_properties(CTestCoverageCollectGCOV PROPERTIES
-    PASS_REGULAR_EXPRESSION
-    "PASSED with correct output.*Testing/CoverageInfo/main.cpp.gcov")
   set_property(TEST CTestCoverageCollectGCOV PROPERTY ENVIRONMENT CTEST_PARALLEL_LEVEL=)
 
   configure_file(
@@ -3477,6 +3480,8 @@ ${CMake_SOURCE_DIR}/Utilities/Release/push.bash --dir dev -- '${CMake_BUILD_NIGH
     --build-two-config
     ${build_generator_args}
     --build-project IncludeDirectories
+    --build-options
+      -DMAKE_SUPPORTS_SPACES=${MAKE_SUPPORTS_SPACES}
     --test-command IncludeDirectories)
   list(APPEND TEST_BUILD_DIRS "${CMake_BINARY_DIR}/Tests/IncludeDirectories")
 

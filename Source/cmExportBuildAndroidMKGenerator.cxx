@@ -5,7 +5,8 @@
 #include <sstream>
 #include <utility>
 
-#include "cmAlgorithms.h"
+#include <cmext/algorithm>
+
 #include "cmGeneratorTarget.h"
 #include "cmLinkItem.h"
 #include "cmMakefile.h"
@@ -46,7 +47,9 @@ void cmExportBuildAndroidMKGenerator::GenerateImportTargetCode(
   os << "LOCAL_MODULE := ";
   os << targetName << "\n";
   os << "LOCAL_SRC_FILES := ";
-  std::string path = cmSystemTools::ConvertToOutputPath(target->GetFullPath());
+  std::string const noConfig; // FIXME: What config to use here?
+  std::string path =
+    cmSystemTools::ConvertToOutputPath(target->GetFullPath(noConfig));
   os << path << "\n";
 }
 
@@ -165,7 +168,7 @@ void cmExportBuildAndroidMKGenerator::GenerateInterfaceProperties(
   // Tell the NDK build system if prebuilt static libraries use C++.
   if (target->GetType() == cmStateEnums::STATIC_LIBRARY) {
     cmLinkImplementation const* li = target->GetLinkImplementation(config);
-    if (cmContains(li->Languages, "CXX")) {
+    if (cm::contains(li->Languages, "CXX")) {
       os << "LOCAL_HAS_CPP := true\n";
     }
   }

@@ -33,6 +33,7 @@ run_cmake(VsPrecompileHeadersReuseFromCompilePDBName)
 run_cmake(VsDeployEnabled)
 run_cmake(VsSettings)
 run_cmake(VsSourceSettingsTool)
+run_cmake(VsPlatformToolset)
 
 run_cmake(VsWinRTByDefault)
 
@@ -55,6 +56,7 @@ if (RunCMake_GENERATOR MATCHES "Visual Studio 1[0-4] 201[0-5]" OR
   run_cmake(UnityBuildPre2017)
 else()
   run_cmake(UnityBuildNative)
+  run_cmake(UnityBuildNativeGrouped)
 endif()
 
 run_cmake(VsDotnetTargetFramework)
