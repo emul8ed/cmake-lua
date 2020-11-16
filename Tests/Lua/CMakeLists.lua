@@ -211,6 +211,15 @@ end
 cm = {}
 
 -- -----------------------------------------------------------------------------
+function cm.eval(cmakeStr)
+    executeCommand('set', 'out_var', '""')
+    cmakeStr = template.substitute(cmakeStr, getfenv())
+    print(cmakeStr)
+    executeCommand('cmake_language', 'EVAL', 'CODE', cmakeStr)
+    return getDefinition('out_var')
+end
+
+-- -----------------------------------------------------------------------------
 function registerCommand(commandTable)
 
     local luaFunction = commandTable.luaFunction or commandTable.cmakeFunction
@@ -281,13 +290,6 @@ registerCommand {
 }
 
 -- -----------------------------------------------------------------------------
-function cm.eval(cmakeStr)
-    cmakeStr = template.substitute(cmakeStr, getfenv())
-    print(cmakeStr)
-    executeCommand('cmake_language', 'EVAL', 'CODE', cmakeStr)
-end
-
--- -----------------------------------------------------------------------------
 function cm.esc(str)
     return string.gsub(str, ';', [[\;]])
 end
@@ -323,7 +325,12 @@ end
 
 setmetatable(cm,
 {
-    __call = function(tbl, ...) cm.eval(...) end
+    __call = function(tbl, ...) cm.eval(...) end,
+    __index = function(_, key)
+        return function(argsStr)
+            return cm.eval(key .. '(' .. argsStr .. ')')
+        end
+    end
 })
 
 cm.addCustomCommand {
@@ -337,17 +344,23 @@ add_custom_command(
     )
 ]]
 
---[[
+file3 = 'myoutfile3.txt'
 cm.add_custom_command [[
     COMMAND bash -c "ls -alrt; echo @@DONE2"
-    OUTPUT myoutfile2.txt
+    OUTPUT $(file3)
     ]]
-    --]]
 
+    --[[
 cm.addCustomTarget {
     'testtarget',
-    depends = { 'myoutfile.txt' }
+    depends = { 'myoutfile.txt', 'myoutfile3.txt' }
 }
+--]]
+
+cm.add_custom_target [[
+    testtarget
+    DEPENDS myoutfile.txt myoutfile3.txt
+    ]]
 
 -- TODO: support DEFINED, COMMAND and other predicates
 
@@ -366,6 +379,11 @@ print('READ OFS: ' ..
         { offset = 2 }
         )
     )
+local content = cm.file [[
+    READ ${CMAKE_CURRENT_BINARY_DIR}/blah.txt
+    out_var
+    ]]
+print('OUT VAR: ' .. content)
 
 --[[
 executeCommand('message', 'STATUS', 'LUA: Adding cmake subdirectory')
