@@ -323,6 +323,19 @@ function cm.fileWrite(fileName, content)
     executeCommand('file', 'WRITE', fileName, toCMakeArg(content))
 end
 
+-- -----------------------------------------------------------------------------
+function cm.isDefined(varName)
+    local result = cm.eval(string.format([[
+    if (DEFINED %s)
+        set(out_var 1)
+    else()
+        set(out_var 0)
+    endif()
+    ]], varName))
+
+    return result == '1'
+end
+
 setmetatable(cm,
 {
     __call = function(tbl, ...) cm.eval(...) end,
@@ -362,6 +375,12 @@ cm.add_custom_target [[
     DEPENDS myoutfile.txt myoutfile3.txt
     ]]
 
+    --[[
+cm.add_custom_target 'testtarget'
+    .depends('myoutfile.txt', 'myoutfile3.txt')
+    .exec()
+    --]]
+
 -- TODO: support DEFINED, COMMAND and other predicates
 
 outFile = 'myoutfile2.txt'
@@ -396,10 +415,12 @@ executeCommand('message', 'STATUS', 'LUA: Return from add_subdirectory')
 executeCommand('message', 'STATUS', 'LUA: SOME_VAR=${SOME_VAR}')
 --]]
 
+--[[
 local someVar = getDefinition('SOME_VAR');
 print('RAW: ' .. someVar)
 
 local foo = 'foovalue'
+--]]
 
 --[[
 cmake(function()
@@ -410,3 +431,105 @@ cmake(function()
 end)
 --]]
 
+-- -----------------------------------------------------------------------------
+function cm.addArgsToCmd(cmakeCmd, ...)
+    local retVarCount = cmakeCmd._retVarCount
+    for _,arg in pairs({...}) do
+        if type(arg) == 'table' and arg._isOutVar then
+            retVarCount = retVarCount + 1
+            arg = '_lua_out_var_' .. tostring(retVarCount)
+        end
+        table.insert(cmakeCmd, arg)
+    end
+    cmakeCmd._retVarCount = retVarCount
+end
+
+local cmakeCmdMeta =
+{
+    __call = function(tbl)
+        print('__call')
+        pretty.dump(tbl)
+        local retVarCount = tbl._retVarCount
+        tbl._retVarCount = nil
+
+        --
+        -- Clear all out vars, so we don't unintentionally return a stale
+        -- value
+        --
+        for i=1,retVarCount do
+            executeCommand('set', '_lua_out_var_' .. tostring(i), '')
+        end
+
+        executeCommand(unpack(tbl))
+
+        local retTable = {}
+        for i=1,retVarCount do
+            table.insert(retTable, getDefinition('_lua_out_var_' .. tostring(i)))
+        end
+
+        return unpack(retTable)
+    end,
+    __index = function(cmakeCmd, key)
+        print('__index: ' .. key)
+        return function(...)
+            table.insert(cmakeCmd, string.upper(key))
+            cm.addArgsToCmd(cmakeCmd, ...)
+            return cmakeCmd
+        end
+    end
+}
+
+-- -----------------------------------------------------------------------------
+function cm.returnVar()
+    return { _isOutVar = true }
+end
+
+setmetatable(cm,
+{
+    __call = function(tbl, ...) cm.eval(...) end,
+    __index = function(_, key)
+        return function(...)
+            local cmakeCmd = {key}
+            cmakeCmd._retVarCount = 0
+            cm.addArgsToCmd(cmakeCmd, ...)
+            setmetatable(cmakeCmd, cmakeCmdMeta)
+            return cmakeCmd
+        end
+    end
+})
+
+cm.add_custom_command()
+    .output 'test.txt'
+    .command('ls', '-alrt')()
+
+cm.add_custom_target 'anotherscheme'
+    .depends 'test.txt'()
+
+if not cm.isDefined('avariable') then
+    print('Var is not defined')
+end
+
+cm.set('avariable', 'avalue')()
+
+if cm.isDefined('avariable') then
+    print('Var is defined')
+end
+
+local result = cm.file().read('${CMAKE_CURRENT_BINARY_DIR}/blah.txt', cm.returnVar())()
+
+print(result)
+
+cm.message()
+    .status 'A status message'()
+
+local cmd = cm.execute_process()
+    .command('ls', '-alrt', 'badger')
+    .result_variable(cm.returnVar())
+    .output_variable(cm.returnVar())
+    .error_variable(cm.returnVar())
+
+local result, out, err = cmd()
+
+print('Result: ' .. tostring(result))
+print('Out: ' .. out)
+print('Err: ' .. err)
