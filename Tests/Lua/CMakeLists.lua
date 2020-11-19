@@ -4,7 +4,7 @@ local template = require 'pl.template'
 local executeCommand = executeCommand
 local getDefinition = getDefinition
 
-_G.verbose = false
+_G.verbose = true
 
 -- -----------------------------------------------------------------------------
 local function verbose(...)
@@ -77,6 +77,16 @@ function cm.eval(cmakeStr)
     return getDefinition('out_var')
 end
 
+local result = cm.eval([[
+function (UnaryCondition condition value)
+    if (\${condition} "\${value}")
+        set(out_var 1 PARENT_SCOPE)
+    else()
+        set(out_var 0 PARENT_SCOPE)
+    endif()
+endfunction()
+]])
+
 -- -----------------------------------------------------------------------------
 function cm.esc(str)
     return string.gsub(str, ';', [[\;]])
@@ -88,31 +98,27 @@ function cm.fileAppend(fileName, content)
 end
 
 -- -----------------------------------------------------------------------------
-function cm.isCommand(cmdName)
-    -- TODO: native implementation of COMMAND
-    local result = cm.eval(string.format([[
-    if (COMMAND %s)
-        set(out_var 1)
-    else()
-        set(out_var 0)
-    endif()
-    ]], cmdName))
+function cm.exists(path)
+    assert(path)
+    executeCommand('UnaryCondition', 'EXISTS', path)
+    return getDefinition('out_var') == '1'
+end
 
-    return result == '1'
+-- TODO: directory, policy, target, symlink, test, absolute, version preds, cache or env defined
+
+-- -----------------------------------------------------------------------------
+function cm.isCommand(cmdName)
+    assert(cmdName)
+    -- TODO: native implementation of COMMAND
+    executeCommand('UnaryCondition', 'COMMAND', cmdName)
+    return getDefinition('out_var') == '1'
 end
 
 -- -----------------------------------------------------------------------------
 function cm.isDefined(varName)
     -- TODO: native implementation of DEFINED
-    local result = cm.eval(string.format([[
-    if (DEFINED %s)
-        set(out_var 1)
-    else()
-        set(out_var 0)
-    endif()
-    ]], varName))
-
-    return result == '1'
+    executeCommand('UnaryCondition', 'DEFINED', varName)
+    return getDefinition('out_var') == '1'
 end
 
 setmetatable(cm,
@@ -182,6 +188,12 @@ function cm.addArgsToCmd(cmakeCmd, ...)
         if type(arg) == 'table' and arg._isOutVar then
             retVarCount = retVarCount + 1
             arg = '_lua_out_var_' .. tostring(retVarCount)
+        elseif type(arg) == 'table' and arg._isOutVar2 then
+            local outVars = rawget(cmakeCmd, '_outVars')
+            outVars = outVars or {}
+            cmakeCmd._outVars = outVars
+            table.insert(outVars, arg)
+            arg = arg._cmVarName
         end
         table.insert(cmakeCmd, arg)
     end
@@ -197,6 +209,13 @@ local cmakeCmdMeta =
         local retVarCount = tbl._retVarCount
         tbl._retVarCount = nil
 
+        local outVars = rawget(tbl, '_outVars')
+        tbl._outVars = nil
+
+        if outVars and retVarCount > 0 then
+            error('Out vars and ret vars are mutually exclusive')
+        end
+
         --
         -- Clear all out vars, so we don't unintentionally return a stale
         -- value
@@ -205,14 +224,47 @@ local cmakeCmdMeta =
             executeCommand('set', '_lua_out_var_' .. tostring(i), '')
         end
 
-        executeCommand(unpack(tbl))
-
-        local retTable = {}
-        for i=1,retVarCount do
-            table.insert(retTable, getDefinition('_lua_out_var_' .. tostring(i)))
+        if outVars then
+            for _,var in ipairs(outVars) do
+                executeCommand('set', var._cmVarName, '')
+            end
         end
 
-        return unpack(retTable)
+        executeCommand(unpack(tbl))
+
+        if retVarCount > 0 then
+            local retTable = {}
+            for i=1,retVarCount do
+                table.insert(retTable, getDefinition('_lua_out_var_' .. tostring(i)))
+            end
+
+            return unpack(retTable)
+        elseif outVars then
+            local retTable = {}
+            for _,var in ipairs(outVars) do
+                local val = getDefinition(var._cmVarName)
+                if false and string.find(val, ';') ~= nil then
+                    -- TODO: explicit raw/string value for data with semicolons
+                    executeCommand('list', var._cmVarName, 'out_var')
+                    local itemCount = tonumber(getDefinition('out_var'))
+                    if itemCount == 0 then
+                        val = nil
+                    elseif itemCount == 1 then
+                        -- TODO: extract scalar.
+                        -- TODO: test this case (e.g. escaped semicolon?)
+                    else
+                        val = {}
+                        -- TODO: extract each item
+                        -- TODO: move this to a helper function
+                    end
+                end
+                retTable[var._luaVarName] = val
+            end
+
+            return retTable
+        else
+            return nil
+        end
     end,
     __index = function(cmakeCmd, key)
         verbose('__index: %s', key)
@@ -264,6 +316,25 @@ assert(cm.toBool('blah-nOTFOUND') == true)
 -- -----------------------------------------------------------------------------
 function cm.returnVar()
     return { _isOutVar = true }
+end
+
+-- -----------------------------------------------------------------------------
+function cm.out(varName)
+    local outVar =
+    {
+        _isOutVar2 = true,
+        _luaVarName = varName,
+        _cmVarName = '_lua_out_' .. varName
+    }
+
+    setmetatable(outVar,
+    {
+        __tostring = function(tbl)
+            return tbl._cmVarName
+        end
+    })
+
+    return outVar
 end
 
 setmetatable(cmc,
@@ -321,9 +392,17 @@ local cmd = cmc.execute_process()
 
 local result, out, err = cmd()
 
-print('Result: ' .. tostring(result))
-print('Out: ' .. out)
-print('Err: ' .. err)
+local cmd = cmc.execute_process()
+    .command('ls', '-alrt', 'badger')
+    .result_variable(cm.out 'result')
+    .output_variable(cm.out 'output')
+    .error_variable(cm.out 'error')
+
+local outVals = cmd()
+
+print('Result: ' .. tostring(outVals.result))
+print('Out: ' .. outVals.output)
+print('Err: ' .. outVals.error)
 
 _G.AGlobalVar = 'global'
 
