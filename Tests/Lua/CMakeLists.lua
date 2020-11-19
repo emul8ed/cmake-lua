@@ -1,120 +1,17 @@
-print('Raw print() call from lua')
 local pretty = require 'pl.pretty'
 local template = require 'pl.template'
 
 local executeCommand = executeCommand
 local getDefinition = getDefinition
 
---[==[
-function cmakeEnvIndex(envTable, key)
-    --[[
-    if string.upper(key) == key then
-        --
-        -- Treat all-uppercase variables as cmake function arguments.
-        -- @@@@@ This should probably be a type not just a string.
-        --
-        return key
-    end
-    --]]
-
-    if envTable.__root then
-        local cmakeCall = { __cmakefn=key }
-
-        setmetatable(cmakeCall,
-            {
-                __index = function()
-                    return nil
-                end,
-                __call = function(table, ...)
-                    envTable.__root = true
-
-                    print(table.__cmakefn .. '(' .. _G.table.concat({...}, ', ') .. ')')
-                    executeCommand(table.__cmakefn, ...)
-
-                    local result = {}
-                    setmetatable(result, {
-                        __tostring = function(table)
-                            error(string.format('Attempt to convert cmake call to string (key=%s)', key))
-                        end }
-                        )
-                    return result
-                end,
-                __newindex = function()
-                    error('Cmake function call table is read-only')
-                end
-            })
-
-        envTable.__root = false
-
-        return cmakeCall
-    else
-        local envResult = rawget(getfenv(), key)
-
-        if envResult ~= nil then
-            return envResult
-        else
-            return key
-        end
-    end
-end
-
-function cmake(envFn)
-    local env =
-    {
-        __root = true
-    }
-    setfenv(envFn, env)
-
-    local upIdx = 1
-    while true do
-        local name = debug.getupvalue(envFn, upIdx)
-        if name == nil then
-            break
-        end
-        error('Upvalue capture not allowed')
-        if name == string.upper(name) then
-            error(string.format('Captured all-caps upvalue "%s". All-caps names are reserved for cmake call arguments.', name))
-        end
-
-        upIdx = upIdx + 1
-    end
-
-    setmetatable(env,
-    {
-        __index = cmakeEnvIndex,
-        __newindex = function()
-            error('Cmake env is read-only')
-        end
-    })
-
-    envFn()
-end
-
-_G.AGlobalVar = 'global'
-
-message = 'foo'
-
-cmake(function()
-    message(STATUS, 'LUA: Adding cmake subdirectory')
-
-    set(SOME_VAR, 'Cached value', CACHE, INTERNAL, '')
-
-    message(STATUS, 'LUA: SOME_VAR=${SOME_VAR}')
-    message(STATUS, message)
-
-    add_subdirectory('subdir')
-
-    message(STATUS, 'LUA: Return from add_subdirectory')
-    message(STATUS, 'LUA: SOME_VAR=${SOME_VAR}')
-end)
---]==]
-
+-- -----------------------------------------------------------------------------
 function errorFmt(...)
     error(string.format(...))
 end
 
+-- -----------------------------------------------------------------------------
 function toCMakeArg(luaValue)
-    -- TODO: expand lists when pushing cmake vars on C++ side
+    -- TODO: expand lists when pushing cmake vars on C++ side?
     local valType = type(luaValue)
     if valType == 'table' then
         -- TODO: reject values that end in unquoted backslash? Or handle quoting/unquoting?
@@ -134,6 +31,7 @@ function toCMakeArg(luaValue)
     end
 end
 
+-- -----------------------------------------------------------------------------
 function processArgTable(functionName, argDefs, argTable, cmakeCmd)
 
     function processArg(argDef, value)
@@ -209,9 +107,11 @@ function doCommand(commandTable, argTable)
 end
 
 cm = {}
+cmc = {}
 
 -- -----------------------------------------------------------------------------
 function cm.eval(cmakeStr)
+    -- TODO: support multiple out vars
     executeCommand('set', 'out_var', '""')
     cmakeStr = template.substitute(cmakeStr, getfenv())
     print(cmakeStr)
@@ -324,7 +224,21 @@ function cm.fileWrite(fileName, content)
 end
 
 -- -----------------------------------------------------------------------------
+function cm.isCommand(cmdName)
+    -- TODO: native implementation of DEFINED
+    local result = cm.eval(string.format([[
+    if (COMMAND %s)
+        set(out_var 1)
+    else()
+        set(out_var 0)
+    endif()
+    ]], cmdName))
+
+    return result == '1'
+end
+-- -----------------------------------------------------------------------------
 function cm.isDefined(varName)
+    -- TODO: native implementation of DEFINED
     local result = cm.eval(string.format([[
     if (DEFINED %s)
         set(out_var 1)
@@ -374,12 +288,6 @@ cm.add_custom_target [[
     testtarget
     DEPENDS myoutfile.txt myoutfile3.txt
     ]]
-
-    --[[
-cm.add_custom_target 'testtarget'
-    .depends('myoutfile.txt', 'myoutfile3.txt')
-    .exec()
-    --]]
 
 -- TODO: support DEFINED, COMMAND and other predicates
 
@@ -484,7 +392,7 @@ function cm.returnVar()
     return { _isOutVar = true }
 end
 
-setmetatable(cm,
+setmetatable(cmc,
 {
     __call = function(tbl, ...) cm.eval(...) end,
     __index = function(_, key)
@@ -498,31 +406,32 @@ setmetatable(cm,
     end
 })
 
-cm.add_custom_command()
+cmc.add_custom_command()
     .output 'test.txt'
     .command('ls', '-alrt')()
 
-cm.add_custom_target 'anotherscheme'
+cmc.add_custom_target 'anotherscheme'
     .depends 'test.txt'()
 
-if not cm.isDefined('avariable') then
-    print('Var is not defined')
-end
+assert(not cm.isDefined('avariable'))
 
-cm.set('avariable', 'avalue')()
+cmc.set('avariable', 'avalue')()
 
-if cm.isDefined('avariable') then
-    print('Var is defined')
-end
+assert(cm.isDefined('avariable'))
 
-local result = cm.file().read('${CMAKE_CURRENT_BINARY_DIR}/blah.txt', cm.returnVar())()
+assert(cm.isCommand('add_custom_command'))
+
+assert(not cm.isCommand('non_existent'))
+
+local result = cmc.file()
+    .read('${CMAKE_CURRENT_BINARY_DIR}/blah.txt', cm.returnVar()) ()
 
 print(result)
 
-cm.message()
+cmc.message()
     .status 'A status message'()
 
-local cmd = cm.execute_process()
+local cmd = cmc.execute_process()
     .command('ls', '-alrt', 'badger')
     .result_variable(cm.returnVar())
     .output_variable(cm.returnVar())
@@ -533,3 +442,6 @@ local result, out, err = cmd()
 print('Result: ' .. tostring(result))
 print('Out: ' .. out)
 print('Err: ' .. err)
+
+_G.AGlobalVar = 'global'
+cmc.add_subdirectory 'subdir'()
