@@ -4,7 +4,7 @@ local template = require 'pl.template'
 local executeCommand = executeCommand
 local getDefinition = getDefinition
 
-_G.verbose = true
+_G.verbose = false
 
 -- -----------------------------------------------------------------------------
 local function verbose(...)
@@ -50,7 +50,7 @@ function toCMakeArg(luaValue)
         -- TODO: reject values that end in unquoted backslash? Or handle quoting/unquoting?
         local escapedVal = {}
         for _,item in pairs(luaValue) do
-            escapedVal[#escapedVal + 1] = toCMakeArg(tostring(item))
+            escapedVal[#escapedVal + 1] = toCMakeArg(item)
         end
         return table.concat(escapedVal, ';')
     elseif valType == 'string' then
@@ -185,15 +185,22 @@ end)
 function cm.addArgsToCmd(cmakeCmd, ...)
     local retVarCount = cmakeCmd._retVarCount
     for _,arg in pairs({...}) do
-        if type(arg) == 'table' and arg._isOutVar then
-            retVarCount = retVarCount + 1
-            arg = '_lua_out_var_' .. tostring(retVarCount)
-        elseif type(arg) == 'table' and arg._isOutVar2 then
-            local outVars = rawget(cmakeCmd, '_outVars')
-            outVars = outVars or {}
-            cmakeCmd._outVars = outVars
-            table.insert(outVars, arg)
-            arg = arg._cmVarName
+        local argType = type(arg)
+        if argType == 'table' then
+            if arg._isOutVar then
+                retVarCount = retVarCount + 1
+                arg = '_lua_out_var_' .. tostring(retVarCount)
+            elseif arg._isOutVar2 then
+                local outVars = rawget(cmakeCmd, '_outVars')
+                outVars = outVars or {}
+                cmakeCmd._outVars = outVars
+                table.insert(outVars, arg)
+                arg = arg._cmVarName
+            else
+                arg = toCMakeArg(arg)
+            end
+        else
+            arg = toCMakeArg(arg)
         end
         table.insert(cmakeCmd, arg)
     end
@@ -409,3 +416,24 @@ _G.AGlobalVar = 'global'
 cmc.set('SOME_VAR', 'Initial value')
 cmc.add_subdirectory 'subdir'()
 print(getDefinition('SOME_VAR'))
+
+cm.eval([[
+function (ExpectStringEqual lhs)
+    if (NOT "\${lhs}" STREQUAL "\${ARGN}")
+        message(FATAL_ERROR "\${lhs} not string-equal to \${ARGN}")
+    endif()
+endfunction()
+
+function (ExpectStringNotEqual lhs)
+    message(STATUS "\${lhs}")
+    if ("\${lhs}" STREQUAL "\${ARGN}")
+        message(FATAL_ERROR "\${lhs} is string-equal to \${ARGN}")
+    endif()
+endfunction()
+]])
+
+cmc.ExpectStringEqual(true, 'TRUE')()
+cmc.ExpectStringEqual(false, 'FALSE')()
+cmc.ExpectStringEqual({'a','b','c'}, 'a', 'b', 'c')()
+cmc.ExpectStringEqual({1,2,3}, '1', '2', '3')()
+cmc.ExpectStringNotEqual("a;b;c", 'a', 'b', 'c')()
