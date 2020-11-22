@@ -64,7 +64,10 @@ function toCMakeArg(luaValue)
     end
 end
 
-cm = {}
+cm =
+{
+    _pendingCommands = {}
+}
 cmc = {}
 
 -- -----------------------------------------------------------------------------
@@ -213,6 +216,8 @@ local cmakeCmdMeta =
         verbose('__call:')
         verbose(tbl)
 
+        cm._pendingCommands[tbl] = nil
+
         local retVarCount = tbl._retVarCount
         tbl._retVarCount = nil
 
@@ -250,19 +255,16 @@ local cmakeCmdMeta =
             local retTable = {}
             for _,var in ipairs(outVars) do
                 local val = getDefinition(var._cmVarName)
-                if false and string.find(val, ';') ~= nil then
-                    -- TODO: explicit raw/string value for data with semicolons
-                    executeCommand('list', var._cmVarName, 'out_var')
-                    local itemCount = tonumber(getDefinition('out_var'))
-                    if itemCount == 0 then
-                        val = nil
-                    elseif itemCount == 1 then
-                        -- TODO: extract scalar.
-                        -- TODO: test this case (e.g. escaped semicolon?)
+                if val ~= nil and not var._raw then
+                    local valTbl,count = expandList(val);
+                    for idx=1,count do
+                        local curVal = valTbl[idx]
+                        -- TODO: convert cmake bools to lua bools?
+                    end
+                    if count > 1 then
+                        val = valTbl
                     else
-                        val = {}
-                        -- TODO: extract each item
-                        -- TODO: move this to a helper function
+                        val = valTbl[1]
                     end
                 end
                 retTable[var._luaVarName] = val
@@ -344,6 +346,13 @@ function cm.out(varName)
     return outVar
 end
 
+-- -----------------------------------------------------------------------------
+function cm.outRaw(varName)
+    local outVar = cm.out(varName)
+    outVar._raw = true
+    return outVar
+end
+
 setmetatable(cmc,
 {
     __call = function(tbl, ...) cm.eval(...) end,
@@ -353,6 +362,9 @@ setmetatable(cmc,
             cmakeCmd._retVarCount = 0
             cm.addArgsToCmd(cmakeCmd, ...)
             setmetatable(cmakeCmd, cmakeCmdMeta)
+
+            cm._pendingCommands[cmakeCmd] = debug.traceback(key, 2)
+
             return cmakeCmd
         end
     end
@@ -388,6 +400,18 @@ local result = cmc.file()
 
 print(result)
 
+local result = cmc.file()
+    .read('${CMAKE_CURRENT_BINARY_DIR}/blah.txt', cm.out [[test]]) ()
+
+print('RESULT.TEST: ')
+pretty.dump(result.test)
+
+local result = cmc.file()
+    .read('${CMAKE_CURRENT_BINARY_DIR}/blah.txt', cm.outRaw [[test]]) ()
+
+print('RESULT.TEST RAW: ')
+print(result.test)
+
 cmc.message()
     .status 'A status message'()
 
@@ -413,9 +437,16 @@ print('Err: ' .. outVals.error)
 
 _G.AGlobalVar = 'global'
 
-cmc.set('SOME_VAR', 'Initial value')
+cmc.set('SOME_VAR', {'Initial value', 'b'})()
+-- TODO: expand lists and bools in getDefinition?
+print(getDefinition('SOME_VAR'))
 cmc.add_subdirectory 'subdir'()
 print(getDefinition('SOME_VAR'))
+
+cmc.set('CACHE_VAR', {'a','cache','var'})
+    .cache()
+    .string('Doc string')
+    .force()()
 
 cm.eval([[
 function (ExpectStringEqual lhs)
@@ -437,3 +468,14 @@ cmc.ExpectStringEqual(false, 'FALSE')()
 cmc.ExpectStringEqual({'a','b','c'}, 'a', 'b', 'c')()
 cmc.ExpectStringEqual({1,2,3}, '1', '2', '3')()
 cmc.ExpectStringNotEqual("a;b;c", 'a', 'b', 'c')()
+
+local fail = false
+for _,traceback in pairs(cm._pendingCommands) do
+    fail = true
+    io.stderr:write('The following command was constructed but not executed: ')
+    io.stderr:write(traceback .. '\n')
+end
+
+if fail then
+    error('One or more commands not executed')
+end

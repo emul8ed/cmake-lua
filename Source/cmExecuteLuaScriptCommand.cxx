@@ -60,6 +60,29 @@ void luaHookLine(lua_State* L, lua_Debug* ar)
     luaCurrentSourceLine = ar->currentline;
 }
 
+int luaExpandList(lua_State* L)
+{
+    cm::string_view value = luaL_checkstring(L, 1);
+
+    std::vector<std::string> list;
+    constexpr bool emptyArgs = true;
+    cmExpandList(value, list, emptyArgs);
+
+    lua_newtable(L);
+    int tableIdx = lua_gettop(L);
+    int idx = 1;
+    for (auto const& item : list)
+    {
+        lua_pushstring(L, item.c_str());
+        lua_rawseti(L, tableIdx, idx++);
+    }
+
+    lua_settop(L, tableIdx);
+    lua_pushinteger(L, list.size());
+
+    return 2;
+}
+
 lua_State* InitLuaState()
 {
   lua_State* L = lua_open();
@@ -107,6 +130,10 @@ bool cmExecLuaScriptCommand(std::vector<std::string> const& args,
   lua_pushlightuserdata(L, &makefile);
   lua_pushcclosure(L, luaGetDefinition, 1);
   lua_setglobal(L, "getDefinition");
+
+  lua_pushlightuserdata(L, &makefile);
+  lua_pushcclosure(L, luaExpandList, 1);
+  lua_setglobal(L, "expandList");
 
   bool result = (luaL_dofile(L, inputFile.c_str()) == 0);
 
