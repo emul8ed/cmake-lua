@@ -168,22 +168,6 @@ local content = cm.file [[
     ]]
 print('OUT VAR: ' .. content)
 
---[[
-local someVar = getDefinition('SOME_VAR');
-print('RAW: ' .. someVar)
-
-local foo = 'foovalue'
---]]
-
---[[
-cmake(function()
-    add_custom_target('acustomtarget', ALL, DEPENDS, 'myoutfile.txt')
-    set('ValueX', 'CachedValue', CACHE, STRING, 'Doc')
-    message(STATUS, 'This is a message from lua')
-    -- add_subdirectory('foo')
-end)
---]]
-
 -- -----------------------------------------------------------------------------
 function cm.addArgsToCmd(cmakeCmd, ...)
     local retVarCount = cmakeCmd._retVarCount
@@ -286,41 +270,81 @@ local cmakeCmdMeta =
     end
 }
 
-local falseValues =
+local boolValues =
 {
-    [''] = true,
-    ['0'] = true,
-    ['false'] = true,
-    ignore = true,
-    n = true,
-    no = true
+    ['0'] = false,
+    ['false'] = false,
+    ignore = false,
+    n = false,
+    no = false,
+    off = false,
+
+    ['1'] = true,
+    on = true,
+    ['true'] = true,
+    y = true,
+    yes = true
 }
 
 -- -----------------------------------------------------------------------------
-function cm.toBool(cmakeStr)
-    local cmakeStrLower = string.lower(cmakeStr)
-
-    local isFalse = falseValues[cmakeStrLower]
-    if isFalse then
+function cm.isNotFound(cmakeStr)
+    if cmakeStr == 'NOTFOUND'
+        or (#cmakeStr >= 9 and string.sub(cmakeStr, -9) == '-NOTFOUND')
+            then
+        return true
+    else
         return false
     end
-
-    if cmakeStr == 'NOTFOUND' then
-        return false
-    end
-
-    if #cmakeStr >= 9 and string.sub(cmakeStr, -9) == '-NOTFOUND' then
-        return false
-    end
-
-    return true
 end
 
-assert(cm.toBool('NOTFOUND') == false)
-assert(cm.toBool('-NOTFOUND') == false)
-assert(cm.toBool('blah-NOTFOUND') == false)
-assert(cm.toBool('nOTFOUND') == true)
-assert(cm.toBool('blah-nOTFOUND') == true)
+-- -----------------------------------------------------------------------------
+function cm.isTrue(cmakeStr)
+    if #cmakeStr == 0 then
+        return false
+    end
+
+    local cmakeStrLower = string.lower(cmakeStr)
+
+    local boolVal = boolValues[cmakeStrLower]
+    if boolVal ~= nil then
+        return boolVal
+    end
+
+    if cm.isNotFound(cmakeStr) then
+        return false
+    else
+        return true
+    end
+end
+
+-- -----------------------------------------------------------------------------
+function cm.toBool(cmakeStr)
+    local result = boolValues[string.lower(cmakeStr)]
+
+    if result ~= nil then
+        return result
+    end
+
+    if cm.isNotFound(cmakeStr) then
+        return false
+    end
+
+    return nil
+end
+
+assert(not cm.isTrue('NOTFOUND'))
+assert(not cm.isTrue('-NOTFOUND'))
+assert(cm.isTrue('blah-NOTFOUND') == false)
+assert(cm.isTrue('nOTFOUND'))
+assert(cm.isTrue('blah-nOTFOUND'))
+
+assert(cm.toBool('TRUE') == true)
+assert(cm.toBool('true') == true)
+assert(cm.toBool('on') == true)
+assert(cm.toBool('1') == true)
+assert(cm.toBool('yes') == true)
+assert(cm.toBool('tru') == nil)
+assert(cm.toBool('tru') == nil)
 
 -- -----------------------------------------------------------------------------
 function cm.returnVar()
@@ -355,7 +379,6 @@ end
 
 setmetatable(cmc,
 {
-    __call = function(tbl, ...) cm.eval(...) end,
     __index = function(_, key)
         return function(...)
             local cmakeCmd = {key}
