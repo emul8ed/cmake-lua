@@ -29,9 +29,19 @@ int luaExecuteCommand(lua_State* L)
     }
 
     cmExecutionStatus status(*makeFile);
-    makeFile->ExecuteCommand(function, status);
+    bool result = makeFile->ExecuteCommand(function, status);
 
-    return 0;
+    lua_pushboolean(L, result);
+    if (!result)
+    {
+        lua_pushstring(L, status.GetError().c_str());
+    }
+    else
+    {
+        lua_pushnil(L);
+    }
+
+    return 2;
 }
 
 int luaGetDefinition(lua_State* L)

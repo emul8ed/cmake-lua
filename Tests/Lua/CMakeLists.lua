@@ -203,10 +203,8 @@ local cmakeCmdMeta =
         cm._pendingCommands[tbl] = nil
 
         local retVarCount = tbl._retVarCount
-        tbl._retVarCount = nil
 
         local outVars = rawget(tbl, '_outVars')
-        tbl._outVars = nil
 
         if outVars and retVarCount > 0 then
             error('Out vars and ret vars are mutually exclusive')
@@ -226,7 +224,12 @@ local cmakeCmdMeta =
             end
         end
 
-        executeCommand(unpack(tbl))
+        local result, err = executeCommand(unpack(tbl))
+
+        print(result)
+        if not result then
+            error(err)
+        end
 
         if retVarCount > 0 then
             local retTable = {}
@@ -435,6 +438,34 @@ local result = cmc.file()
 print('RESULT.TEST RAW: ')
 print(result.test)
 
+-- -----------------------------------------------------------------------------
+function cm.retry(attempts, cmakeCmd)
+    local result = false
+    local err
+    local attempt = 1
+
+    local returns
+    while not result and attempt <= attempts do
+        result, err = pcall(function() returns = {cmakeCmd()} end)
+        attempt = attempt + 1
+    end
+
+    if not result then
+        error(err)
+    end
+
+    return unpack(returns)
+end
+
+--[=[
+result = cm.retry(3,
+    cmc.file()
+        .read('${CMAKE_CURRENT_BINARY_DIR}/bladfh.txt', cm.outRaw [[test]])
+    )
+
+print(result.test)
+--]=]
+
 cmc.message()
     .status 'A status message'()
 
@@ -474,14 +505,14 @@ cmc.set('CACHE_VAR', {'a','cache','var'})
 cm.eval([[
 function (ExpectStringEqual lhs)
     if (NOT "\${lhs}" STREQUAL "\${ARGN}")
-        message(FATAL_ERROR "\${lhs} not string-equal to \${ARGN}")
+        message(SEND_ERROR "\${lhs} not string-equal to \${ARGN}")
     endif()
 endfunction()
 
 function (ExpectStringNotEqual lhs)
     message(STATUS "\${lhs}")
     if ("\${lhs}" STREQUAL "\${ARGN}")
-        message(FATAL_ERROR "\${lhs} is string-equal to \${ARGN}")
+        message(SEND_ERROR "\${lhs} is string-equal to \${ARGN}")
     endif()
 endfunction()
 ]])
@@ -491,6 +522,10 @@ cmc.ExpectStringEqual(false, 'FALSE')()
 cmc.ExpectStringEqual({'a','b','c'}, 'a', 'b', 'c')()
 cmc.ExpectStringEqual({1,2,3}, '1', '2', '3')()
 cmc.ExpectStringNotEqual("a;b;c", 'a', 'b', 'c')()
+
+result = cm.retry(3,
+    cmc.ExpectStringEqual(true, 'FALSE')
+    )
 
 local fail = false
 for _,traceback in pairs(cm._pendingCommands) do
