@@ -523,9 +523,11 @@ cmc.ExpectStringEqual({'a','b','c'}, 'a', 'b', 'c')()
 cmc.ExpectStringEqual({1,2,3}, '1', '2', '3')()
 cmc.ExpectStringNotEqual("a;b;c", 'a', 'b', 'c')()
 
+--[[
 result = cm.retry(3,
     cmc.ExpectStringEqual(true, 'FALSE')
     )
+    --]]
 
 local fail = false
 for _,traceback in pairs(cm._pendingCommands) do

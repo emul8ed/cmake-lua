@@ -125,9 +125,12 @@ bool cmExecLuaScriptCommand(std::vector<std::string> const& args,
     return false;
   }
 
+  bool result = true;
   cmMakefile& makefile = status.GetMakefile();
 
   lua_State* L = makefile.GetState()->GetLuaState();
+
+  int initTop = lua_gettop(L);
 
   lua_getglobal(L, "executeCommand");
 
@@ -138,55 +141,39 @@ bool cmExecLuaScriptCommand(std::vector<std::string> const& args,
     if (result != 0)
     {
       status.SetError(lua_tostring(L, 1));
-      return false;
+      result = false;
     }
   }
 
-  int lTop = lua_gettop(L);
+  std::string inputFile;
+  if (result) {
+    std::string const& inFile = args[0];
+    inputFile = cmSystemTools::CollapseFullPath(
+      inFile, status.GetMakefile().GetCurrentSourceDirectory());
 
-  std::string const& inFile = args[0];
-  const std::string inputFile = cmSystemTools::CollapseFullPath(
-    inFile, status.GetMakefile().GetCurrentSourceDirectory());
-
-  // If the input location is a directory, error out.
-  if (cmSystemTools::FileIsDirectory(inputFile)) {
-    status.SetError(cmStrCat("input location\n  ", inputFile,
-                             "\n"
-                             "is a directory but a file was expected."));
-    return false;
+    // If the input location is a directory, error out.
+    if (cmSystemTools::FileIsDirectory(inputFile)) {
+      status.SetError(cmStrCat("input location\n  ", inputFile,
+                               "\n"
+                               "is a directory but a file was expected."));
+      result = false;
+    }
   }
 
-  makefile.AddCMakeDependFile(inputFile);
+  if (result) {
+    makefile.AddCMakeDependFile(inputFile);
 
-  lua_getglobal(L, "execLuaScript");
-  lua_pushstring(L, inputFile.c_str());
-  lua_pushlightuserdata(L, &makefile);
-  bool result = (lua_pcall(L, 2, 0, 0) == 0);
+    lua_getglobal(L, "execLuaScript");
+    lua_pushstring(L, inputFile.c_str());
+    lua_pushlightuserdata(L, &makefile);
+    result = (lua_pcall(L, 2, 0, 0) == 0);
 
-  if (!result) {
-    status.SetError(lua_tostring(L, 1));
+    if (!result) {
+      status.SetError(lua_tostring(L, 1));
+    }
   }
 
-  /*
-  // @@@@@ Set this in the function env
-  lua_pushlightuserdata(L, &makefile);
-  lua_pushcclosure(L, luaExecuteCommand, 1);
-  lua_setglobal(L, "executeCommand");
-
-  lua_pushlightuserdata(L, &makefile);
-  lua_pushcclosure(L, luaGetDefinition, 1);
-  lua_setglobal(L, "getDefinition");
-
-  lua_pushlightuserdata(L, &makefile);
-  lua_pushcclosure(L, luaExpandList, 1);
-  lua_setglobal(L, "expandList");
-
-  bool result = (luaL_dofile(L, inputFile.c_str()) == 0);
-
-  if (!result) {
-    status.SetError(lua_tostring(L, 1));
-  }
-  */
+  lua_settop(L, initTop);
 
   return result;
 }
