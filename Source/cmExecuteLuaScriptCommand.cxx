@@ -16,13 +16,13 @@ int luaCurrentSourceLine = 0;
 
 int luaExecuteCommand(lua_State* L)
 {
-    cmMakefile* makeFile = static_cast<cmMakefile*>(lua_touserdata(L, lua_upvalueindex(1)));
+    cmMakefile* makeFile = static_cast<cmMakefile*>(lua_touserdata(L, 1));
 
     cmListFileFunction function {};
-    function.Name = lua_tostring(L, 1);
+    function.Name = lua_tostring(L, 2);
     function.Line = luaCurrentSourceLine;
 
-    for (int i = 2; i <= lua_gettop(L); ++i)
+    for (int i = 3; i <= lua_gettop(L); ++i)
     {
         function.Arguments.emplace_back(lua_tostring(L, i),
             cmListFileArgument::Quoted, 0); // @@@@@ line
@@ -46,9 +46,9 @@ int luaExecuteCommand(lua_State* L)
 
 int luaGetDefinition(lua_State* L)
 {
-    cmMakefile* makeFile = static_cast<cmMakefile*>(lua_touserdata(L, lua_upvalueindex(1)));
+    cmMakefile* makeFile = static_cast<cmMakefile*>(lua_touserdata(L, 1));
 
-    std::string name = lua_tostring(L, 1);
+    std::string name = lua_tostring(L, 2);
 
     const char* def = makeFile->GetDefinition(name);
 
@@ -93,16 +93,27 @@ int luaExpandList(lua_State* L)
     return 2;
 }
 
-lua_State* InitLuaState()
+int lInitLuaState(lua_State* L)
 {
-  lua_State* L = lua_open();
   luaL_openlibs(L);
 
   lua_register(L, "executeCommand", luaExecuteCommand);
   lua_register(L, "getDefinition", luaGetDefinition);
+  lua_register(L, "expandList", luaExpandList);
 
   lua_sethook(L, luaHookLine, LUA_MASKLINE, 0);
-  return L;
+
+  std::string cmakeLuaPath = cmSystemTools::GetCMakeRoot() + "/Modules/CMake.lua";
+
+  int result = luaL_loadfile(L, cmakeLuaPath.c_str());
+  if (result != 0)
+  {
+    lua_error(L);
+  }
+
+  lua_call(L, 0, 0);
+
+  return 0;
 }
 
 // cmExecLuaScriptCommand
@@ -113,6 +124,25 @@ bool cmExecLuaScriptCommand(std::vector<std::string> const& args,
     status.SetError("called with incorrect number of arguments, expected 1");
     return false;
   }
+
+  cmMakefile& makefile = status.GetMakefile();
+
+  lua_State* L = makefile.GetState()->GetLuaState();
+
+  lua_getglobal(L, "executeCommand");
+
+  bool initRequired = lua_isnil(L, -1);
+  lua_pop(L, 1);
+  if (initRequired) {
+    int result = lua_cpcall(L, lInitLuaState, nullptr);
+    if (result != 0)
+    {
+      status.SetError(lua_tostring(L, 1));
+      return false;
+    }
+  }
+
+  int lTop = lua_gettop(L);
 
   std::string const& inFile = args[0];
   const std::string inputFile = cmSystemTools::CollapseFullPath(
@@ -126,12 +156,18 @@ bool cmExecLuaScriptCommand(std::vector<std::string> const& args,
     return false;
   }
 
-  cmMakefile& makefile = status.GetMakefile();
-
   makefile.AddCMakeDependFile(inputFile);
 
-  lua_State* L = makefile.GetState()->GetLuaState();
+  lua_getglobal(L, "execLuaScript");
+  lua_pushstring(L, inputFile.c_str());
+  lua_pushlightuserdata(L, &makefile);
+  bool result = (lua_pcall(L, 2, 0, 0) == 0);
 
+  if (!result) {
+    status.SetError(lua_tostring(L, 1));
+  }
+
+  /*
   // @@@@@ Set this in the function env
   lua_pushlightuserdata(L, &makefile);
   lua_pushcclosure(L, luaExecuteCommand, 1);
@@ -150,6 +186,7 @@ bool cmExecLuaScriptCommand(std::vector<std::string> const& args,
   if (!result) {
     status.SetError(lua_tostring(L, 1));
   }
+  */
 
   return result;
 }

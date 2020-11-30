@@ -268,15 +268,13 @@ void cmState::RemoveCacheEntryProperty(std::string const& key,
   this->CacheManager->RemoveCacheEntryProperty(key, propertyName);
 }
 
-lua_State* InitLuaState();
-
 cmStateSnapshot cmState::Reset()
 {
   if (LuaState)
   {
     lua_close(LuaState);
   }
-  LuaState = InitLuaState();
+  LuaState = lua_open();
 
   this->GlobalProperties.Clear();
   this->PropertyDefinitions = {};
