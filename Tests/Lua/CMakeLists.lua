@@ -52,6 +52,7 @@ function toCMakeArg(luaValue)
         for _,item in pairs(luaValue) do
             escapedVal[#escapedVal + 1] = toCMakeArg(item)
         end
+        -- TODO: tests for nested tables
         return table.concat(escapedVal, ';')
     elseif valType == 'string' then
         return string.gsub(luaValue, ';', [[\;]])
@@ -64,17 +65,11 @@ function toCMakeArg(luaValue)
     end
 end
 
-cm =
-{
-    _pendingCommands = {}
-}
-cmc = {}
-
 -- -----------------------------------------------------------------------------
 function cm.eval(cmakeStr)
     -- TODO: support multiple out vars
     executeCommand('set', 'out_var', '""')
-    cmakeStr = template.substitute(cmakeStr, getfenv())
+    -- TODO cmakeStr = template.substitute(cmakeStr, getfenv())
 
     executeCommand('cmake_language', 'EVAL', 'CODE', cmakeStr)
     return getDefinition('out_var')
@@ -93,6 +88,11 @@ endfunction()
 -- -----------------------------------------------------------------------------
 function cm.esc(str)
     return string.gsub(str, ';', [[\;]])
+end
+
+-- -----------------------------------------------------------------------------
+function cm.get(cmakeVar)
+    return cm.toLuaValue(getDefinition(cmakeVar))
 end
 
 -- -----------------------------------------------------------------------------
@@ -174,14 +174,14 @@ function cm.addArgsToCmd(cmakeCmd, ...)
     for _,arg in pairs({...}) do
         local argType = type(arg)
         if argType == 'table' then
-            if arg._isOutVar then
-                retVarCount = retVarCount + 1
-                arg = '_lua_out_var_' .. tostring(retVarCount)
-            elseif arg._isOutVar2 then
+            if arg._isRetVar or arg._isOutVar then
                 local outVars = rawget(cmakeCmd, '_outVars')
                 outVars = outVars or {}
                 cmakeCmd._outVars = outVars
                 table.insert(outVars, arg)
+                if arg._isRetVar then
+                    arg._cmVarName = '_lua_ret_val_' .. tostring(#outVars)
+                end
                 arg = arg._cmVarName
             else
                 arg = toCMakeArg(arg)
@@ -194,6 +194,47 @@ function cm.addArgsToCmd(cmakeCmd, ...)
     cmakeCmd._retVarCount = retVarCount
 end
 
+-- -----------------------------------------------------------------------------
+function cm.toLuaValueScalar(cmakeStr)
+    if cmakeStr == nil then
+        return nil
+    end
+
+    --
+    -- Try coercing to number first, so '0' and '1' will be converted to number
+    -- instead of boolean.
+    --
+    local asNum = tonumber(cmakeStr)
+    if asNum ~= nil then
+        return asNum
+    end
+
+    local asBool = cm.toBool(cmakeStr)
+    if asBool ~= nil then
+        return asBool
+    end
+
+    return cmakeStr
+end
+
+-- -----------------------------------------------------------------------------
+function cm.toLuaValue(cmakeStr)
+    if cmakeStr == nil then
+        return nil
+    end
+
+    local valTbl,count = expandList(cmakeStr);
+    for idx=1,count do
+        valTbl[idx] = cm.toLuaValueScalar(valTbl[idx])
+    end
+
+    if count > 1 then
+        return valTbl
+    else
+        return valTbl[1]
+    end
+end
+
 local cmakeCmdMeta =
 {
     __call = function(tbl)
@@ -202,22 +243,12 @@ local cmakeCmdMeta =
 
         cm._pendingCommands[tbl] = nil
 
-        local retVarCount = tbl._retVarCount
-
         local outVars = rawget(tbl, '_outVars')
-
-        if outVars and retVarCount > 0 then
-            error('Out vars and ret vars are mutually exclusive')
-        end
 
         --
         -- Clear all out vars, so we don't unintentionally return a stale
         -- value
         --
-        for i=1,retVarCount do
-            executeCommand('set', '_lua_out_var_' .. tostring(i), '')
-        end
-
         if outVars then
             for _,var in ipairs(outVars) do
                 executeCommand('set', var._cmVarName, '')
@@ -226,38 +257,38 @@ local cmakeCmdMeta =
 
         local result, err = executeCommand(unpack(tbl))
 
-        print(result)
         if not result then
             error(err)
         end
 
-        if retVarCount > 0 then
-            local retTable = {}
-            for i=1,retVarCount do
-                table.insert(retTable, getDefinition('_lua_out_var_' .. tostring(i)))
-            end
+        if outVars then
+            local expandList = expandList
+            local getDefinition = getDefinition
+            local toLuaValue = cm.toLuaValue
 
-            return unpack(retTable)
-        elseif outVars then
             local retTable = {}
+            local unpackTable = false
+
             for _,var in ipairs(outVars) do
                 local val = getDefinition(var._cmVarName)
                 if val ~= nil and not var._raw then
-                    local valTbl,count = expandList(val);
-                    for idx=1,count do
-                        local curVal = valTbl[idx]
-                        -- TODO: convert cmake bools to lua bools?
-                    end
-                    if count > 1 then
-                        val = valTbl
-                    else
-                        val = valTbl[1]
-                    end
+                    val = toLuaValue(val)
                 end
-                retTable[var._luaVarName] = val
+
+                if var._isOutVar then
+                    retTable[var._luaVarName] = val
+                else
+                    assert(var._isRetVar)
+                    table.insert(retTable, val)
+                    unpackTable = true
+                end
             end
 
-            return retTable
+            if unpackTable then
+                return unpack(retTable), retTable
+            else
+                return retTable
+            end
         else
             return nil
         end
@@ -266,7 +297,6 @@ local cmakeCmdMeta =
         verbose('__index: %s', key)
         return function(...)
             table.insert(cmakeCmd, string.upper(key))
-            -- TODO: auto convert lua types?
             cm.addArgsToCmd(cmakeCmd, ...)
             return cmakeCmd
         end
@@ -349,16 +379,18 @@ assert(cm.toBool('yes') == true)
 assert(cm.toBool('tru') == nil)
 assert(cm.toBool('tru') == nil)
 
+-- TODO: returnRaw
+
 -- -----------------------------------------------------------------------------
 function cm.returnVar()
-    return { _isOutVar = true }
+    return { _isRetVar = true }
 end
 
 -- -----------------------------------------------------------------------------
 function cm.out(varName)
     local outVar =
     {
-        _isOutVar2 = true,
+        _isOutVar = true,
         _luaVarName = varName,
         _cmVarName = '_lua_out_' .. varName
     }
@@ -489,11 +521,26 @@ print('Result: ' .. tostring(outVals.result))
 print('Out: ' .. outVals.output)
 print('Err: ' .. outVals.error)
 
+local result, tbl = cmc.execute_process()
+    .command('ls', '-alrt')
+    .result_variable(cm.returnVar())
+    .output_variable(cm.out 'output')
+    .error_variable(cm.out 'error') ()
+
+print('Result: ' .. result)
+print('Out: ' .. tbl.output)
+print('Err: ' .. tbl.error)
+
 _G.AGlobalVar = 'global'
 
-cmc.set('SOME_VAR', {'Initial value', 'b'})()
--- TODO: expand lists and bools in getDefinition?
-print(getDefinition('SOME_VAR'))
+cmc.set('SOME_VAR', {'Initial value', 'b', 0})()
+local val = cm.get('SOME_VAR')
+print(val)
+assert(type(val) == 'table')
+assert(val[1] == 'Initial value')
+assert(val[2] == 'b')
+assert(val[3] == 0)
+
 cmc.add_subdirectory 'subdir'()
 print(getDefinition('SOME_VAR'))
 
@@ -529,13 +576,19 @@ result = cm.retry(3,
     )
     --]]
 
-local fail = false
-for _,traceback in pairs(cm._pendingCommands) do
-    fail = true
-    io.stderr:write('The following command was constructed but not executed: ')
-    io.stderr:write(traceback .. '\n')
+function _G.TestLuaFunction(arg1)
+    print('Success! ' .. arg1)
 end
 
-if fail then
-    error('One or more commands not executed')
+-- -----------------------------------------------------------------------------
+function cm.registerCMakeFunction(name)
+  local str = string.format([[
+    function (%s)
+      lua(CALL %s \${ARGN})
+    endfunction()
+    ]], name, name
+    )
+  cm.eval(str)
 end
+
+cm.registerCMakeFunction('TestLuaFunction')

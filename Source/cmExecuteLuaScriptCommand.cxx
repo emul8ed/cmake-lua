@@ -116,64 +116,141 @@ int lInitLuaState(lua_State* L)
   return 0;
 }
 
-// cmExecLuaScriptCommand
-bool cmExecLuaScriptCommand(std::vector<std::string> const& args,
-                            cmExecutionStatus& status)
+bool InitLuaState(lua_State* L, cmExecutionStatus& status)
 {
-  if (args.size() != 1) {
-    status.SetError("called with incorrect number of arguments, expected 1");
-    return false;
-  }
-
-  bool result = true;
-  cmMakefile& makefile = status.GetMakefile();
-
-  lua_State* L = makefile.GetState()->GetLuaState();
-
+  bool retVal = true;
   int initTop = lua_gettop(L);
 
   lua_getglobal(L, "executeCommand");
 
   bool initRequired = lua_isnil(L, -1);
+
   lua_pop(L, 1);
+
   if (initRequired) {
     int result = lua_cpcall(L, lInitLuaState, nullptr);
     if (result != 0)
     {
       status.SetError(lua_tostring(L, 1));
-      result = false;
-    }
-  }
-
-  std::string inputFile;
-  if (result) {
-    std::string const& inFile = args[0];
-    inputFile = cmSystemTools::CollapseFullPath(
-      inFile, status.GetMakefile().GetCurrentSourceDirectory());
-
-    // If the input location is a directory, error out.
-    if (cmSystemTools::FileIsDirectory(inputFile)) {
-      status.SetError(cmStrCat("input location\n  ", inputFile,
-                               "\n"
-                               "is a directory but a file was expected."));
-      result = false;
-    }
-  }
-
-  if (result) {
-    makefile.AddCMakeDependFile(inputFile);
-
-    lua_getglobal(L, "execLuaScript");
-    lua_pushstring(L, inputFile.c_str());
-    lua_pushlightuserdata(L, &makefile);
-    result = (lua_pcall(L, 2, 0, 0) == 0);
-
-    if (!result) {
-      status.SetError(lua_tostring(L, 1));
+      retVal = false;
     }
   }
 
   lua_settop(L, initTop);
 
+  return retVal;
+}
+
+bool cmExecLuaScriptFileCommand(std::vector<std::string> const& args,
+                                cmExecutionStatus& status)
+{
+  cmMakefile& makefile = status.GetMakefile();
+
+  lua_State* L = makefile.GetState()->GetLuaState();
+
+  if (!InitLuaState(L, status))
+  {
+    return false;
+  }
+
+  std::string inputFile;
+  std::string const& inFile = args[1];
+  inputFile = cmSystemTools::CollapseFullPath(
+    inFile, status.GetMakefile().GetCurrentSourceDirectory());
+
+  // If the input location is a directory, error out.
+  if (cmSystemTools::FileIsDirectory(inputFile)) {
+    status.SetError(cmStrCat("input location\n  ", inputFile,
+                             "\n"
+                             "is a directory but a file was expected."));
+    return false;
+  }
+
+  makefile.AddCMakeDependFile(inputFile);
+
+  int initTop = lua_gettop(L);
+
+  lua_getglobal(L, "execLuaScript");
+  lua_pushstring(L, inputFile.c_str());
+  lua_pushlightuserdata(L, &makefile);
+  bool result = (lua_pcall(L, 2, 0, 0) == 0);
+
+  if (!result) {
+    status.SetError(lua_tostring(L, 1));
+  }
+
+  lua_settop(L, initTop);
+
   return result;
+}
+
+bool cmExecLuaScriptFunctionCommand(std::vector<std::string> const& args,
+                                    cmExecutionStatus& status)
+{
+  cmMakefile& makefile = status.GetMakefile();
+
+  lua_State* L = makefile.GetState()->GetLuaState();
+
+  if (!InitLuaState(L, status))
+  {
+    return false;
+  }
+
+  const std::string& function = args[1];
+  size_t argCount = args.size() - 2;
+
+  int initTop = lua_gettop(L);
+
+  lua_getglobal(L, "execLuaFn");
+  lua_getglobal(L, function.c_str());
+  lua_pushlightuserdata(L, &makefile);
+
+  for (size_t argIdx = 2; argIdx < args.size(); ++argIdx)
+  {
+    lua_pushstring(L, args[argIdx].c_str());
+  }
+
+  bool result = (lua_pcall(L, 2 + argCount, 0, 0) == 0);
+
+  if (!result) {
+    status.SetError(lua_tostring(L, 1));
+  }
+
+  lua_settop(L, initTop);
+
+  return result;
+}
+
+// cmExecLuaScriptCommand
+bool cmExecLuaScriptCommand(std::vector<std::string> const& args,
+                            cmExecutionStatus& status)
+{
+  if (args.empty()) {
+    status.SetError("missing argument(s)");
+    return false;
+  }
+
+  const std::string& command = args[0];
+
+  if (command == "SCRIPT") {
+    if (args.size() != 2) {
+      status.SetError("Unspected argument count for SCRIPT command");
+      return false;
+    }
+    return cmExecLuaScriptFileCommand(args, status);
+  }
+  else if (command == "CALL")
+  {
+    if (args.size() < 2) {
+      status.SetError("Missing arguments to CALL command");
+      return false;
+    }
+    return cmExecLuaScriptFunctionCommand(args, status);
+  }
+  else
+  {
+    status.SetError(std::string("invalid command ") + command);
+    return false;
+  }
+
 }
