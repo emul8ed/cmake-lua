@@ -202,7 +202,7 @@ bool cmExecLuaScriptFunctionCommand(std::vector<std::string> const& args,
   int initTop = lua_gettop(L);
 
   lua_getglobal(L, "execLuaFn");
-  lua_getglobal(L, function.c_str());
+  lua_pushstring(L, function.c_str());
   lua_pushlightuserdata(L, &makefile);
 
   for (size_t argIdx = 2; argIdx < args.size(); ++argIdx)

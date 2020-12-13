@@ -9,8 +9,14 @@ cm =
 }
 cmc = {}
 
+_G.verbose = false
+
 -- -----------------------------------------------------------------------------
 function executeCommand(...)
+    if _G.verbose then
+        print('executeCommand("' .. table.concat({...}, '", "') .. '")')
+    end
+
   return innerExecuteCommand(currentMakefile, ...)
 end
 
@@ -23,14 +29,31 @@ end
 function execLuaFn(fn, makefile, ...)
 
   -- TODO: convert args to lua types
-  assert(type(fn) == 'function')
 
   local prevMakefile = currentMakefile
   currentMakefile = makefile
 
-  fn(...)
+  local fnTy = type(fn)
+  if fnTy == 'string' then
+    _G[fn](...)
+  elseif fnTy == 'function' then
+    fn(...)
+  else
+    error('Invalid type for fn arg')
+ end
 
   currentMakefile = prevMakefile
+
+  local fail = false
+  for _,traceback in pairs(cm._pendingCommands) do
+      fail = true
+      io.stderr:write('The following command was constructed but not executed: ')
+      io.stderr:write(traceback .. '\n')
+  end
+
+  if fail then
+      error('One or more commands not executed')
+  end
 end
 
 -- -----------------------------------------------------------------------------
@@ -53,15 +76,4 @@ function execLuaScript(luaFile, makefile)
   setfenv(fn, env)
 
   execLuaFn(fn, makefile)
-
-  local fail = false
-  for _,traceback in pairs(cm._pendingCommands) do
-      fail = true
-      io.stderr:write('The following command was constructed but not executed: ')
-      io.stderr:write(traceback .. '\n')
-  end
-
-  if fail then
-      error('One or more commands not executed')
-  end
 end

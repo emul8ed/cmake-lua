@@ -4,8 +4,6 @@ local template = require 'pl.template'
 local executeCommand = executeCommand
 local getDefinition = getDefinition
 
-_G.verbose = false
-
 -- -----------------------------------------------------------------------------
 local function verbose(...)
     if not _G.verbose then
@@ -55,7 +53,8 @@ function toCMakeArg(luaValue)
         -- TODO: tests for nested tables
         return table.concat(escapedVal, ';')
     elseif valType == 'string' then
-        return string.gsub(luaValue, ';', [[\;]])
+        local escapedVal = string.gsub(luaValue, ';', [[\;]])
+        return escapedVal
     elseif valType == 'number' then
         return tostring(luaValue)
     elseif valType == 'boolean' then
@@ -67,15 +66,15 @@ end
 
 -- -----------------------------------------------------------------------------
 function cm.eval(cmakeStr)
-    -- TODO: support multiple out vars
-    executeCommand('set', 'out_var', '""')
-    -- TODO cmakeStr = template.substitute(cmakeStr, getfenv())
+
+    if cm.enableTemplates then
+        cmakeStr = template.substitute(cmakeStr, getfenv())
+    end
 
     executeCommand('cmake_language', 'EVAL', 'CODE', cmakeStr)
-    return getDefinition('out_var')
 end
 
-local result = cm.eval([[
+cm.eval([[
 function (UnaryCondition condition value)
     if (\${condition} "\${value}")
         set(out_var 1 PARENT_SCOPE)
@@ -93,6 +92,11 @@ end
 -- -----------------------------------------------------------------------------
 function cm.get(cmakeVar)
     return cm.toLuaValue(getDefinition(cmakeVar))
+end
+
+-- -----------------------------------------------------------------------------
+function cm.getRaw(cmakeVar)
+    return getDefinition(cmakeVar)
 end
 
 -- -----------------------------------------------------------------------------
@@ -124,6 +128,7 @@ function cm.isDefined(varName)
     return getDefinition('out_var') == '1'
 end
 
+--[===[
 setmetatable(cm,
 {
     __call = function(tbl, ...) cm.eval(...) end,
@@ -167,6 +172,7 @@ local content = cm.file [[
     out_var
     ]]
 print('OUT VAR: ' .. content)
+--]===]
 
 -- -----------------------------------------------------------------------------
 function cm.addArgsToCmd(cmakeCmd, ...)
@@ -576,8 +582,13 @@ result = cm.retry(3,
     )
     --]]
 
-function _G.TestLuaFunction(arg1)
-    print('Success! ' .. arg1)
+function _G.TestLuaFunction(inarg, outvar)
+    print('Success! ' .. inarg)
+    outvar = outvar or 'blah'
+    -- @@@ Raises error about lack of parent scope
+    -- cmc.set(outvar, inarg).parent_scope()()
+    cmc.set(outvar, inarg).cache().string('').force()()
+    cmc.set_property().global().property(outvar, inarg)()
 end
 
 -- -----------------------------------------------------------------------------
@@ -592,3 +603,29 @@ function cm.registerCMakeFunction(name)
 end
 
 cm.registerCMakeFunction('TestLuaFunction')
+
+cm.eval
+    [[file(READ ${CMAKE_CURRENT_BINARY_DIR}/blah.txt test)]]
+
+cmv = {}
+setmetatable(cmv,
+    {
+        __index = function(_, key)
+            print(key)
+            return cm.get(key)
+        end,
+        __newindex = function(_, key, value)
+            print(key)
+            --value = toCMakeArg(value)
+            print(value)
+            executeCommand('set', key, toCMakeArg(value))
+        end
+    })
+
+print('cm.get(test): ')
+pretty.dump(cm.get 'test')
+print('cmv.test: ')
+pretty.dump(cmv.test)
+cmv.test = 'New value'
+--print('cm.get(test): ' .. cm.get 'test')
+print('cm.get(test): ' .. tostring(cm.get 'test'))
